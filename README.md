@@ -1,7 +1,7 @@
 # pmpro_extension
 
 template pour la création d'un plugin wordpress
-A partir ce ce code, il va falloir créer un mini plugin avec interface admin (dans un sous menu de <div class="wp-menu-name">Adhésions</div>) pour gérer les parainages. 
+A partir ce ce code, il va falloir créer un mini plugin avec interface admin (dans un sous-menu à l'intérieur de <div class="wp-menu-name">Adhésions</div>) pour gérer les parainages. 
 Le menu admin doit permettre de voir les codes actifs pour les utilisateurs avec compte niveau d'adhésion "premium". 
 Voir les codes qui ont été utilisés
 Voir les crédits gagnés par des utilisateurs (afin de voir qui on doit rembourser)
