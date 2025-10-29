@@ -11,6 +11,7 @@ Il faudrait pouvoir afficher par dessus le site, il fenêtre flottante pour rapp
 Il faut pouvoir paramétrer le niveau de remise pour le parrainé et le gain pour le parrain dans l'interface. 
 Il faut pouvoir remettre à jour manuellement le code de parrainage pour tous les utilisateurs ou pour un seul (histoire que les codes ne soit pas valable à vie pour question de sécurité)
 Il faut un shortcode pour afficher pour les utilisateurs premium le nombre de points qu'ils ont gagné.
+n'utilise que php, html et JS.
 
 <?php
 /**
