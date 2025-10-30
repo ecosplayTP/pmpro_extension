@@ -271,6 +271,47 @@ class Ecosplay_Referrals_Service {
     }
 
     /**
+     * Regenerates every stored referral code when permitted.
+     *
+     * @return int
+     */
+    public function force_regenerate_all_codes() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            return 0;
+        }
+
+        $records = $this->store->get_active_codes( false );
+        $updated = 0;
+
+        foreach ( $records as $record ) {
+            $result = $this->store->regenerate_code( (int) $record->user_id );
+
+            if ( false !== $result ) {
+                $updated++;
+            }
+        }
+
+        return $updated;
+    }
+
+    /**
+     * Resets notification markers for one or all members.
+     *
+     * @param int|null $user_id Optional user identifier.
+     *
+     * @return bool
+     */
+    public function reset_notifications( $user_id = null ) {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            return false;
+        }
+
+        $this->store->reset_notification_flag( null === $user_id ? null : (int) $user_id );
+
+        return true;
+    }
+
+    /**
      * Forces the regeneration of a member referral code.
      *
      * @param int $user_id Target user identifier.
@@ -283,6 +324,27 @@ class Ecosplay_Referrals_Service {
         }
 
         return $this->store->regenerate_code( (int) $user_id );
+    }
+
+    /**
+     * Returns aggregate stats for the admin dashboard.
+     *
+     * @param string $period Period grouping (month|week).
+     * @param int    $limit  Number of periods to fetch.
+     *
+     * @return array<string,mixed>
+     */
+    public function get_stats_snapshot( $period = 'month', $limit = 6 ) {
+        return $this->store->get_usage_summary( $period, $limit );
+    }
+
+    /**
+     * Returns the total credits earned across all active referrals.
+     *
+     * @return float
+     */
+    public function get_total_credits_due() {
+        return $this->store->get_total_credits();
     }
 
     /**

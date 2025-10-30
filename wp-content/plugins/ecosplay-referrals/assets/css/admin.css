@@ -1,0 +1,55 @@
+/*
+ * Admin styles for ECOSplay referrals screens.
+ *
+ * @file wp-content/plugins/ecosplay-referrals/assets/css/admin.css
+ */
+.ecos-referrals-admin .nav-tab-wrapper {
+    margin-bottom: 1.5rem;
+}
+
+.ecos-referrals-inline-form {
+    display: inline-flex;
+    align-items: center;
+    margin-right: 0.5rem;
+}
+
+.ecos-referrals-actions {
+    margin-bottom: 1rem;
+}
+
+.ecos-referrals-summary {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.ecos-referrals-card {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+    padding: 1rem;
+    min-width: 220px;
+}
+
+.ecos-referrals-amount {
+    font-size: 1.5rem;
+    margin: 0;
+}
+
+.ecos-referrals-period {
+    margin: 0;
+}
+
+.column-actions {
+    width: 220px;
+}
+
+.status-enabled {
+    color: #007017;
+    font-weight: 600;
+}
+
+.status-disabled {
+    color: #a00;
+    font-weight: 600;
+}

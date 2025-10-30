@@ -130,7 +130,18 @@ register_deactivation_hook( __FILE__, 'ecosplay_referrals_deactivate' );
  * @return void
  */
 function ecosplay_referrals_boot() {
-    ecosplay_referrals_service();
+    $service = ecosplay_referrals_service();
+
+    if ( is_admin() ) {
+        require_once ECOSPLAY_REFERRALS_ADMIN . 'class-admin-settings.php';
+        require_once ECOSPLAY_REFERRALS_ADMIN . 'class-admin-menu.php';
+        require_once ECOSPLAY_REFERRALS_ADMIN . 'class-admin-codes-page.php';
+        require_once ECOSPLAY_REFERRALS_ADMIN . 'class-admin-usage-page.php';
+        require_once ECOSPLAY_REFERRALS_ADMIN . 'class-admin-stats-page.php';
+
+        $settings = new Ecosplay_Referrals_Admin_Settings( $service );
+        new Ecosplay_Referrals_Admin_Menu( $service, $settings );
+    }
 }
 
 add_action( 'plugins_loaded', 'ecosplay_referrals_boot' );
