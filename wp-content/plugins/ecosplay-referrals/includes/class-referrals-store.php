@@ -310,6 +310,49 @@ class Ecosplay_Referrals_Store {
     }
 
     /**
+     * Checks if the floating notice dismissal was already stored for the user.
+     *
+     * @param int $user_id User identifier.
+     *
+     * @return bool
+     */
+    public function has_seen_notification( $user_id ) {
+        global $wpdb;
+
+        $flag = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT has_seen FROM {$this->notifications_table()} WHERE user_id = %d",
+                $user_id
+            )
+        );
+
+        return ! empty( $flag );
+    }
+
+    /**
+     * Stores the floating notice dismissal flag for the given user.
+     *
+     * @param int $user_id User identifier.
+     *
+     * @return bool
+     */
+    public function mark_notification_seen( $user_id ) {
+        global $wpdb;
+
+        $result = $wpdb->query(
+            $wpdb->prepare(
+                "INSERT INTO {$this->notifications_table()} (user_id, has_seen, updated_at)
+                VALUES (%d, 1, %s)
+                ON DUPLICATE KEY UPDATE has_seen = VALUES(has_seen), updated_at = VALUES(updated_at)",
+                $user_id,
+                current_time( 'mysql' )
+            )
+        );
+
+        return false !== $result;
+    }
+
+    /**
      * Resets the notification flag for one or all users.
      *
      * @param int|null $user_id Optional user identifier.
