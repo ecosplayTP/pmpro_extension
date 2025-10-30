@@ -241,6 +241,55 @@ class Ecosplay_Referrals_Store {
     }
 
     /**
+     * Summarises usage rows grouped by period.
+     *
+     * @param string $period Grouping period (month|week).
+     * @param int    $limit  Number of periods to return.
+     *
+     * @return array<string,mixed>
+     */
+    public function get_usage_summary( $period = 'month', $limit = 6 ) {
+        global $wpdb;
+
+        $period = in_array( $period, array( 'week', 'month' ), true ) ? $period : 'month';
+        $limit  = max( 1, (int) $limit );
+
+        if ( 'week' === $period ) {
+            $group_expr = "DATE_FORMAT(created_at, '%x-%v')";
+            $label_expr = "DATE_FORMAT(created_at, '%x semaine %v')";
+        } else {
+            $group_expr = "DATE_FORMAT(created_at, '%Y-%m-01')";
+            $label_expr = "DATE_FORMAT(created_at, '%Y-%m')";
+        }
+
+        $sql = "SELECT {$group_expr} AS period_key, {$label_expr} AS period_label, COUNT(*) AS conversions, COALESCE(SUM(discount_amount),0) AS total_discount
+            FROM {$this->uses_table()}
+            GROUP BY {$group_expr}
+            ORDER BY period_key DESC
+            LIMIT %d";
+
+        $entries = $wpdb->get_results( $wpdb->prepare( $sql, $limit ) );
+
+        return array(
+            'period'  => $period,
+            'entries' => $entries,
+        );
+    }
+
+    /**
+     * Returns the global amount of credits earned.
+     *
+     * @return float
+     */
+    public function get_total_credits() {
+        global $wpdb;
+
+        $total = $wpdb->get_var( "SELECT COALESCE(SUM(earned_credits),0) FROM {$this->referrals_table()} WHERE is_active = 1" );
+
+        return (float) $total;
+    }
+
+    /**
      * Retrieves the total credits earned by a member.
      *
      * @param int $user_id User identifier.

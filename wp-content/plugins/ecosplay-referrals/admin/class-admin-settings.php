@@ -1,0 +1,240 @@
+<?php
+/**
+ * Settings controller wiring the referrals configuration screen.
+ *
+ * @package Ecosplay\Referrals
+ * @file    wp-content/plugins/ecosplay-referrals/admin/class-admin-settings.php
+ */
+
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
+
+/**
+ * Manages the Settings API integration and view rendering.
+ */
+class Ecosplay_Referrals_Admin_Settings {
+    /**
+     * Option storage key.
+     *
+     * @var string
+     */
+    protected $option_name = 'ecosplay_referrals_options';
+
+    /**
+     * Default configuration values.
+     *
+     * @var array<string,float>
+     */
+    protected $defaults = array(
+        'discount_amount' => Ecosplay_Referrals_Service::DISCOUNT_EUR,
+        'reward_amount'   => Ecosplay_Referrals_Service::REWARD_POINTS,
+    );
+
+    /**
+     * Domain logic dependency.
+     *
+     * @var Ecosplay_Referrals_Service
+     */
+    protected $service;
+
+    /**
+     * Hooks settings registration and runtime filters.
+     *
+     * @param Ecosplay_Referrals_Service $service Domain service.
+     */
+    public function __construct( Ecosplay_Referrals_Service $service ) {
+        $this->service = $service;
+
+        add_action( 'admin_init', array( $this, 'register_settings' ) );
+        add_filter( 'ecosplay_referrals_discount_amount', array( $this, 'filter_discount' ) );
+        add_filter( 'ecosplay_referrals_reward_amount', array( $this, 'filter_reward' ) );
+    }
+
+    /**
+     * Supplies the tab slug handled here.
+     *
+     * @return string
+     */
+    public function get_slug() {
+        return 'settings';
+    }
+
+    /**
+     * Supplies the heading for the settings tab.
+     *
+     * @return string
+     */
+    public function get_title() {
+        return __( 'Réglages du parrainage', 'ecosplay-referrals' );
+    }
+
+    /**
+     * Placeholder to respect the controller contract.
+     *
+     * @return void
+     */
+    public function handle() {}
+
+    /**
+     * Registers option fields with the WordPress Settings API.
+     *
+     * @return void
+     */
+    public function register_settings() {
+        register_setting( 'ecosplay_referrals', $this->option_name, array( $this, 'sanitize_options' ) );
+
+        add_settings_section(
+            'ecos_referrals_amounts',
+            __( 'Montants de parrainage', 'ecosplay-referrals' ),
+            '__return_false',
+            'ecosplay_referrals'
+        );
+
+        add_settings_field(
+            'ecos_referrals_discount',
+            __( 'Remise accordée (€)', 'ecosplay-referrals' ),
+            array( $this, 'render_discount_field' ),
+            'ecosplay_referrals',
+            'ecos_referrals_amounts'
+        );
+
+        add_settings_field(
+            'ecos_referrals_reward',
+            __( 'Crédits gagnés', 'ecosplay-referrals' ),
+            array( $this, 'render_reward_field' ),
+            'ecosplay_referrals',
+            'ecos_referrals_amounts'
+        );
+    }
+
+    /**
+     * Validates and sanitizes option inputs before saving.
+     *
+     * @param array<string,mixed> $input Raw submitted values.
+     *
+     * @return array<string,float>
+     */
+    public function sanitize_options( $input ) {
+        $sanitized = array();
+
+        $discount = isset( $input['discount_amount'] ) ? $this->sanitize_amount( $input['discount_amount'] ) : $this->defaults['discount_amount'];
+        $reward   = isset( $input['reward_amount'] ) ? $this->sanitize_amount( $input['reward_amount'] ) : $this->defaults['reward_amount'];
+
+        $sanitized['discount_amount'] = $discount;
+        $sanitized['reward_amount']   = $reward;
+
+        add_settings_error( 'ecosplay_referrals', 'settings_saved', __( 'Réglages enregistrés.', 'ecosplay-referrals' ), 'updated' );
+
+        return $sanitized;
+    }
+
+    /**
+     * Outputs the settings form view.
+     *
+     * @return void
+     */
+    public function render() {
+        $options = $this->get_options();
+
+        include ECOSPLAY_REFERRALS_ADMIN . 'views/settings.php';
+    }
+
+    /**
+     * Displays the discount input field.
+     *
+     * @return void
+     */
+    public function render_discount_field() {
+        $options  = $this->get_options();
+        $discount = isset( $options['discount_amount'] ) ? $options['discount_amount'] : $this->defaults['discount_amount'];
+
+        printf(
+            '<input type="number" class="small-text" name="%1$s[discount_amount]" value="%2$s" step="0.01" min="0" />',
+            esc_attr( $this->option_name ),
+            esc_attr( $discount )
+        );
+    }
+
+    /**
+     * Displays the reward input field.
+     *
+     * @return void
+     */
+    public function render_reward_field() {
+        $options = $this->get_options();
+        $reward  = isset( $options['reward_amount'] ) ? $options['reward_amount'] : $this->defaults['reward_amount'];
+
+        printf(
+            '<input type="number" class="small-text" name="%1$s[reward_amount]" value="%2$s" step="0.01" min="0" />',
+            esc_attr( $this->option_name ),
+            esc_attr( $reward )
+        );
+    }
+
+    /**
+     * Adjusts the discount amount exposed to the front end.
+     *
+     * @param float $value Default discount.
+     *
+     * @return float
+     */
+    public function filter_discount( $value ) {
+        $options = $this->get_options();
+
+        if ( isset( $options['discount_amount'] ) ) {
+            return (float) $options['discount_amount'];
+        }
+
+        return (float) $value;
+    }
+
+    /**
+     * Adjusts the reward amount exposed to the front end.
+     *
+     * @param float $value Default reward.
+     *
+     * @return float
+     */
+    public function filter_reward( $value ) {
+        $options = $this->get_options();
+
+        if ( isset( $options['reward_amount'] ) ) {
+            return (float) $options['reward_amount'];
+        }
+
+        return (float) $value;
+    }
+
+    /**
+     * Retrieves the persisted options merged with defaults.
+     *
+     * @return array<string,float>
+     */
+    protected function get_options() {
+        $stored = get_option( $this->option_name, array() );
+
+        if ( ! is_array( $stored ) ) {
+            $stored = array();
+        }
+
+        return array_merge( $this->defaults, $stored );
+    }
+
+    /**
+     * Normalizes numeric input ensuring positive floats.
+     *
+     * @param mixed $value Raw input value.
+     *
+     * @return float
+     */
+    protected function sanitize_amount( $value ) {
+        $amount = floatval( $value );
+
+        if ( $amount < 0 ) {
+            $amount = 0.0;
+        }
+
+        return round( $amount, 2 );
+    }
+}
