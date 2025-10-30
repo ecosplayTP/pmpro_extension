@@ -1,7 +1,9 @@
 # pmpro_extension
 
-template pour la création d'un plugin wordpress
-A partir ce ce code, il va falloir créer un mini plugin avec interface admin (dans un sous-menu à l'intérieur de <div class="wp-menu-name">Adhésions</div>) pour gérer les parainages. 
+# plugin scope
+Ce plugin a pour objectif d’étendre PaidMemberships Pro afin d’intégrer un système complet de parrainage utilisateur pour les membres ayant un niveau d’adhésion « premium ». Il permet de générer et attribuer automatiquement un code de parrainage unique pour chaque utilisateur éligible, et d’offrir une remise configurable au filleul lors de son inscription ainsi qu’un gain de points / crédit pour le parrain. Une interface d’administration dédiée (accessible dans le menu « Adhésions ») donne accès à la gestion des codes actifs, au suivi des codes utilisés, aux crédits accumulés, aux opérations de réinitialisation des codes ainsi qu’à des tableaux de statistiques (utilisation, temporalité, montants à reverser). Le plugin inclut également un système d’affichage d’une notification flottante sur le site, enregistrant si l’utilisateur l’a déjà vue, et permettant de réinitialiser cette information lors de campagnes de communication. Enfin, il met à disposition des shortcodes pour afficher le code de parrainage de l’utilisateur ainsi que le total de points gagnés.
+
+# functionnalities details
 Le menu admin doit permettre de voir les codes actifs pour les utilisateurs avec compte niveau d'adhésion "premium". 
 Voir les codes qui ont été utilisés
 Voir les crédits gagnés par des utilisateurs (afin de voir qui on doit rembourser)
@@ -13,6 +15,9 @@ Il faut pouvoir remettre à jour manuellement le code de parrainage pour tous le
 Il faut un shortcode pour afficher pour les utilisateurs premium le nombre de points qu'ils ont gagné.
 n'utilise que php, html et JS.
 
+# initial code template 
+template pour la création d'un plugin wordpress
+A partir ce ce code, il va falloir créer un mini plugin avec interface admin (dans un sous-menu à l'intérieur de <div class="wp-menu-name">Adhésions</div>) pour gérer les parainages. 
 <?php
 /**
  * Plugin Name: ECOSplay – Parrainage PMPro (10€ + 10 pts)
