@@ -1,0 +1,54 @@
+/**
+ * Floating notice presentation styles.
+ *
+ * @file assets/css/floating-notice.css
+ */
+
+.ecosplay-floating-notice {
+    position: fixed;
+    right: 1.5rem;
+    bottom: 1.5rem;
+    max-width: 320px;
+    background: #1d1f24;
+    color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 12px 35px rgba(0, 0, 0, 0.25);
+    z-index: 9999;
+    padding: 1rem 1.25rem;
+    font-size: 0.95rem;
+}
+
+.ecosplay-floating-notice__body {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+}
+
+.ecosplay-floating-notice__text {
+    margin: 0;
+    line-height: 1.4;
+    flex: 1 1 auto;
+}
+
+.ecosplay-floating-notice__close {
+    background: transparent;
+    border: none;
+    color: inherit;
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+}
+
+.ecosplay-floating-notice__close:focus {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+}
+
+@media (max-width: 600px) {
+    .ecosplay-floating-notice {
+        left: 1rem;
+        right: 1rem;
+        bottom: 1rem;
+    }
+}

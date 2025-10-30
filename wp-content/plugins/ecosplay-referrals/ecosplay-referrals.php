@@ -142,6 +142,10 @@ function ecosplay_referrals_boot() {
         $settings = new Ecosplay_Referrals_Admin_Settings( $service );
         new Ecosplay_Referrals_Admin_Menu( $service, $settings );
     }
+
+    require_once ECOSPLAY_REFERRALS_PUBLIC . 'class-floating-notice.php';
+
+    new Ecosplay_Referrals_Floating_Notice( $service );
 }
 
 add_action( 'plugins_loaded', 'ecosplay_referrals_boot' );

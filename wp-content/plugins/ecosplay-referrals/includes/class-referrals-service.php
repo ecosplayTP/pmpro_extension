@@ -295,6 +295,40 @@ class Ecosplay_Referrals_Service {
     }
 
     /**
+     * Checks whether the floating notice was already dismissed by the member.
+     *
+     * @param int $user_id User identifier.
+     *
+     * @return bool
+     */
+    public function has_seen_notification( $user_id ) {
+        $user_id = (int) $user_id;
+
+        if ( $user_id <= 0 ) {
+            return false;
+        }
+
+        return $this->store->has_seen_notification( $user_id );
+    }
+
+    /**
+     * Marks the floating notice dismissal for the given member.
+     *
+     * @param int $user_id User identifier.
+     *
+     * @return bool
+     */
+    public function mark_notification_seen( $user_id ) {
+        $user_id = (int) $user_id;
+
+        if ( $user_id <= 0 ) {
+            return false;
+        }
+
+        return $this->store->mark_notification_seen( $user_id );
+    }
+
+    /**
      * Resets notification markers for one or all members.
      *
      * @param int|null $user_id Optional user identifier.
