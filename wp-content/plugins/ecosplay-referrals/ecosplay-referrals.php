@@ -72,12 +72,28 @@ function ecosplay_referrals_autoload( $class ) {
 spl_autoload_register( 'ecosplay_referrals_autoload' );
 
 /**
+ * Returns the referrals data store singleton.
+ *
+ * @return Ecosplay_Referrals_Store
+ */
+function ecosplay_referrals_store() {
+    static $store = null;
+
+    if ( null === $store ) {
+        require_once ECOSPLAY_REFERRALS_INC . 'class-referrals-store.php';
+        $store = new Ecosplay_Referrals_Store();
+    }
+
+    return $store;
+}
+
+/**
  * Performs installation logic on plugin activation.
  *
  * @return void
  */
 function ecosplay_referrals_activate() {
-    // Placeholder for activation routines (e.g., database creation).
+    ecosplay_referrals_store()->install();
 }
 
 /**
