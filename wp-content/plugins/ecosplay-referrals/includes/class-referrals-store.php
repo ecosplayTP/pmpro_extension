@@ -123,6 +123,44 @@ class Ecosplay_Referrals_Store {
     }
 
     /**
+     * Finds the referral record for a given user.
+     *
+     * @param int $user_id User identifier.
+     *
+     * @return object|null
+     */
+    public function get_referral_by_user( $user_id ) {
+        global $wpdb;
+
+        return $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT id, user_id, code, earned_credits, is_active, notification_state, last_regenerated_at, created_at, updated_at
+                 FROM {$this->referrals_table()} WHERE user_id = %d",
+                $user_id
+            )
+        );
+    }
+
+    /**
+     * Finds a referral entry from its code.
+     *
+     * @param string $code Referral code.
+     *
+     * @return object|null
+     */
+    public function get_referral_by_code( $code ) {
+        global $wpdb;
+
+        return $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT id, user_id, code, earned_credits, is_active, notification_state, last_regenerated_at, created_at, updated_at
+                 FROM {$this->referrals_table()} WHERE code = %s",
+                $code
+            )
+        );
+    }
+
+    /**
      * Inserts a record for a code usage and updates credits atomically.
      *
      * @param int   $referral_id     Referral identifier.
@@ -171,6 +209,35 @@ class Ecosplay_Referrals_Store {
         $wpdb->query( 'COMMIT' );
 
         return true;
+    }
+
+    /**
+     * Returns usage history entries for one or all referrals.
+     *
+     * @param int|null $referral_id Optional referral identifier.
+     * @param int      $limit       Number of records to return.
+     *
+     * @return array<int,object>
+     */
+    public function get_usage_history( $referral_id = null, $limit = 20 ) {
+        global $wpdb;
+
+        $sql   = "SELECT id, referral_id, order_id, used_by, discount_amount, created_at FROM {$this->uses_table()}";
+        $args  = array();
+
+        if ( null !== $referral_id ) {
+            $sql   .= ' WHERE referral_id = %d';
+            $args[] = $referral_id;
+        }
+
+        $sql .= ' ORDER BY created_at DESC';
+        $sql .= $wpdb->prepare( ' LIMIT %d', max( 1, (int) $limit ) );
+
+        if ( $args ) {
+            return $wpdb->get_results( $wpdb->prepare( $sql, ...$args ) );
+        }
+
+        return $wpdb->get_results( $sql );
     }
 
     /**

@@ -88,6 +88,22 @@ function ecosplay_referrals_store() {
 }
 
 /**
+ * Returns the referrals domain service singleton.
+ *
+ * @return Ecosplay_Referrals_Service
+ */
+function ecosplay_referrals_service() {
+    static $service = null;
+
+    if ( null === $service ) {
+        require_once ECOSPLAY_REFERRALS_INC . 'class-referrals-service.php';
+        $service = new Ecosplay_Referrals_Service( ecosplay_referrals_store() );
+    }
+
+    return $service;
+}
+
+/**
  * Performs installation logic on plugin activation.
  *
  * @return void
@@ -107,3 +123,14 @@ function ecosplay_referrals_deactivate() {
 
 register_activation_hook( __FILE__, 'ecosplay_referrals_activate' );
 register_deactivation_hook( __FILE__, 'ecosplay_referrals_deactivate' );
+
+/**
+ * Boots the referrals service after plugins are loaded.
+ *
+ * @return void
+ */
+function ecosplay_referrals_boot() {
+    ecosplay_referrals_service();
+}
+
+add_action( 'plugins_loaded', 'ecosplay_referrals_boot' );
