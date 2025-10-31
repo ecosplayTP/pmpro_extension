@@ -36,12 +36,29 @@ class Ecosplay_Referrals_Service {
     public function __construct( Ecosplay_Referrals_Store $store ) {
         $this->store = $store;
 
-        add_action( 'user_register', array( $this, 'ensure_user_code' ), 10, 1 );
+        add_action( 'pmpro_after_change_membership_level', array( $this, 'handle_membership_update' ), 10, 3 );
         add_action( 'pmpro_checkout_boxes', array( $this, 'render_checkout_field' ) );
         add_filter( 'pmpro_registration_checks', array( $this, 'validate_referral_code' ) );
         add_filter( 'pmpro_checkout_level', array( $this, 'apply_referral_discount' ) );
         add_action( 'pmpro_after_checkout', array( $this, 'award_referral_rewards' ), 10, 2 );
         add_action( 'init', array( $this, 'prefill_from_query' ) );
+    }
+
+    /**
+     * Handles membership updates to provision referral codes when needed.
+     *
+     * @param int        $level_id     New membership level identifier.
+     * @param int        $user_id      Affected user identifier.
+     * @param int|string $cancel_level Previous level identifier when available.
+     *
+     * @return void
+     */
+    public function handle_membership_update( $level_id, $user_id, $cancel_level = 0 ) {
+        if ( ! $this->is_user_allowed( $user_id ) ) {
+            return;
+        }
+
+        $this->ensure_user_code( $user_id );
     }
 
     /**
@@ -54,7 +71,7 @@ class Ecosplay_Referrals_Service {
     public function ensure_user_code( $user_id ) {
         $user_id = (int) $user_id;
 
-        if ( $user_id <= 0 ) {
+        if ( $user_id <= 0 || ! $this->is_user_allowed( $user_id ) ) {
             return;
         }
 
@@ -413,7 +430,7 @@ class Ecosplay_Referrals_Service {
     public function get_member_code( $user_id ) {
         $user_id = (int) $user_id;
 
-        if ( $user_id <= 0 ) {
+        if ( $user_id <= 0 || ! $this->is_user_allowed( $user_id ) ) {
             return '';
         }
 
@@ -511,7 +528,63 @@ class Ecosplay_Referrals_Service {
      * @return bool
      */
     protected function is_level_allowed( $level ) {
-        return null !== $level;
+        $allowed_levels = $this->get_allowed_level_ids();
+
+        if ( empty( $allowed_levels ) ) {
+            return null !== $level;
+        }
+
+        if ( null === $level ) {
+            return false;
+        }
+
+        if ( is_object( $level ) && isset( $level->id ) ) {
+            return in_array( (int) $level->id, $allowed_levels, true );
+        }
+
+        if ( is_numeric( $level ) ) {
+            return in_array( (int) $level, $allowed_levels, true );
+        }
+
+        return false;
+    }
+
+    /**
+     * Determines whether the member is entitled to referral privileges.
+     *
+     * @param int $user_id User identifier.
+     *
+     * @return bool
+     */
+    private function is_user_allowed( $user_id ) {
+        $user_id = (int) $user_id;
+
+        if ( $user_id <= 0 || ! function_exists( 'pmpro_hasMembershipLevel' ) ) {
+            return false;
+        }
+
+        $levels = $this->get_allowed_level_ids();
+
+        if ( empty( $levels ) ) {
+            return pmpro_hasMembershipLevel( null, $user_id );
+        }
+
+        return pmpro_hasMembershipLevel( $levels, $user_id );
+    }
+
+    /**
+     * Returns the configured membership level identifiers eligible for referrals.
+     *
+     * @return array<int>
+     */
+    private function get_allowed_level_ids() {
+        $levels = apply_filters( 'ecosplay_referrals_allowed_levels', array() );
+
+        if ( empty( $levels ) ) {
+            return array();
+        }
+
+        return array_values( array_unique( array_filter( array_map( 'intval', (array) $levels ) ) ) );
     }
 
     /**
