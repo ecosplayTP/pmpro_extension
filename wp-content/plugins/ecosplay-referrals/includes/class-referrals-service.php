@@ -208,13 +208,16 @@ class Ecosplay_Referrals_Service {
             return;
         }
 
-        $order_id = $this->extract_order_id( $order );
+        $order_id        = $this->extract_order_id( $order );
+        $discount_amount = $this->get_discount_amount();
+        $reward_amount   = $this->get_reward_amount();
 
         $this->store->log_code_use(
             (int) $referral->id,
             $order_id,
             (int) $user_id,
-            $this->get_reward_amount()
+            $discount_amount,
+            $reward_amount
         );
     }
 
@@ -263,11 +266,12 @@ class Ecosplay_Referrals_Service {
      *
      * @param int|null $referral_id Optional referral identifier filter.
      * @param int      $limit       Maximum rows to return.
+     * @param bool     $with_labels Whether to include column descriptors.
      *
-     * @return array<int,object>
+     * @return array<int,object>|array<string,mixed>
      */
-    public function get_usage_history( $referral_id = null, $limit = 20 ) {
-        return $this->store->get_usage_history( $referral_id, $limit );
+    public function get_usage_history( $referral_id = null, $limit = 20, $with_labels = false ) {
+        return $this->store->get_usage_history( $referral_id, $limit, $with_labels );
     }
 
     /**
@@ -363,13 +367,14 @@ class Ecosplay_Referrals_Service {
     /**
      * Returns aggregate stats for the admin dashboard.
      *
-     * @param string $period Period grouping (month|week).
-     * @param int    $limit  Number of periods to fetch.
+     * @param string $period      Period grouping (month|week).
+     * @param int    $limit       Number of periods to fetch.
+     * @param bool   $with_labels Whether to include aggregation descriptors.
      *
      * @return array<string,mixed>
      */
-    public function get_stats_snapshot( $period = 'month', $limit = 6 ) {
-        return $this->store->get_usage_summary( $period, $limit );
+    public function get_stats_snapshot( $period = 'month', $limit = 6, $with_labels = false ) {
+        return $this->store->get_usage_summary( $period, $limit, $with_labels );
     }
 
     /**

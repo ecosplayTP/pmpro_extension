@@ -33,13 +33,14 @@ if ( ! defined( 'ABSPATH' ) ) {
             <th><?php esc_html_e( 'Code', 'ecosplay-referrals' ); ?></th>
             <th><?php esc_html_e( 'Commande', 'ecosplay-referrals' ); ?></th>
             <th><?php esc_html_e( 'Utilisateur', 'ecosplay-referrals' ); ?></th>
-            <th><?php esc_html_e( 'Remise (€)', 'ecosplay-referrals' ); ?></th>
+            <th><?php echo isset( $column_labels['discount'] ) ? esc_html( $column_labels['discount'] ) : esc_html__( 'Remise (€)', 'ecosplay-referrals' ); ?></th>
+            <th><?php echo isset( $column_labels['reward'] ) ? esc_html( $column_labels['reward'] ) : esc_html__( 'Récompense (€)', 'ecosplay-referrals' ); ?></th>
         </tr>
     </thead>
     <tbody>
         <?php if ( empty( $usage ) ) : ?>
             <tr>
-                <td colspan="5"><?php esc_html_e( 'Aucune utilisation n\'a été enregistrée.', 'ecosplay-referrals' ); ?></td>
+                <td colspan="6"><?php esc_html_e( 'Aucune utilisation n\'a été enregistrée.', 'ecosplay-referrals' ); ?></td>
             </tr>
         <?php else : ?>
             <?php foreach ( $usage as $row ) :
@@ -58,6 +59,7 @@ if ( ! defined( 'ABSPATH' ) ) {
                         <?php endif; ?>
                     </td>
                     <td><?php echo esc_html( number_format_i18n( (float) $row->discount_amount, 2 ) ); ?></td>
+                    <td><?php echo esc_html( number_format_i18n( (float) $row->reward_amount, 2 ) ); ?></td>
                 </tr>
             <?php endforeach; ?>
         <?php endif; ?>

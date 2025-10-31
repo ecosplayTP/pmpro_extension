@@ -80,6 +80,7 @@ class Ecosplay_Referrals_Store {
             order_id BIGINT(20) UNSIGNED NULL,
             used_by BIGINT(20) UNSIGNED NULL,
             discount_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+            reward_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY referral_id (referral_id)
@@ -95,9 +96,25 @@ class Ecosplay_Referrals_Store {
             UNIQUE KEY user_id (user_id)
         ) $charset;";
 
+        $uses_table        = $this->uses_table();
+        $uses_table_sql    = esc_sql( $uses_table );
+        $column_check_sql  = $wpdb->prepare( "SHOW COLUMNS FROM `{$uses_table_sql}` LIKE %s", 'reward_amount' );
+        $had_reward_column = (bool) $wpdb->get_var( $column_check_sql );
+
         dbDelta( $sql_referrals );
         dbDelta( $sql_uses );
         dbDelta( $sql_notifications );
+
+        $has_reward_column = (bool) $wpdb->get_var( $column_check_sql );
+
+        if ( ! $has_reward_column ) {
+            $wpdb->query( "ALTER TABLE `{$uses_table_sql}` ADD COLUMN reward_amount DECIMAL(10,2) NOT NULL DEFAULT 0 AFTER discount_amount" );
+            $has_reward_column = (bool) $wpdb->get_var( $column_check_sql );
+        }
+
+        if ( ! $had_reward_column && $has_reward_column ) {
+            $wpdb->query( "UPDATE `{$uses_table_sql}` SET reward_amount = discount_amount" );
+        }
     }
 
     /**
@@ -166,11 +183,12 @@ class Ecosplay_Referrals_Store {
      * @param int   $referral_id     Referral identifier.
      * @param int   $order_id        Related order identifier.
      * @param int   $used_by         User who used the code.
-     * @param float $discount_amount Discount applied.
+     * @param float $discount_amount Discount applied to the customer.
+     * @param float $reward_amount   Reward granted to the referrer.
      *
      * @return bool
      */
-    public function log_code_use( $referral_id, $order_id, $used_by, $discount_amount ) {
+    public function log_code_use( $referral_id, $order_id, $used_by, $discount_amount, $reward_amount ) {
         global $wpdb;
 
         $wpdb->query( 'START TRANSACTION' );
@@ -182,8 +200,9 @@ class Ecosplay_Referrals_Store {
                 'order_id'        => $order_id,
                 'used_by'         => $used_by,
                 'discount_amount' => $discount_amount,
+                'reward_amount'   => $reward_amount,
             ),
-            array( '%d', '%d', '%d', '%f' )
+            array( '%d', '%d', '%d', '%f', '%f' )
         );
 
         if ( false === $inserted ) {
@@ -195,7 +214,7 @@ class Ecosplay_Referrals_Store {
         $updated = $wpdb->query(
             $wpdb->prepare(
                 "UPDATE {$this->referrals_table()} SET earned_credits = earned_credits + %f, updated_at = CURRENT_TIMESTAMP WHERE id = %d",
-                $discount_amount,
+                $reward_amount,
                 $referral_id
             )
         );
@@ -216,13 +235,14 @@ class Ecosplay_Referrals_Store {
      *
      * @param int|null $referral_id Optional referral identifier.
      * @param int      $limit       Number of records to return.
+     * @param bool     $with_labels Whether to include column descriptors.
      *
-     * @return array<int,object>
+     * @return array<int,object>|array<string,mixed>
      */
-    public function get_usage_history( $referral_id = null, $limit = 20 ) {
+    public function get_usage_history( $referral_id = null, $limit = 20, $with_labels = false ) {
         global $wpdb;
 
-        $sql   = "SELECT id, referral_id, order_id, used_by, discount_amount, created_at FROM {$this->uses_table()}";
+        $sql   = "SELECT id, referral_id, order_id, used_by, discount_amount, reward_amount, created_at FROM {$this->uses_table()}";
         $args  = array();
 
         if ( null !== $referral_id ) {
@@ -233,11 +253,19 @@ class Ecosplay_Referrals_Store {
         $sql .= ' ORDER BY created_at DESC';
         $sql .= $wpdb->prepare( ' LIMIT %d', max( 1, (int) $limit ) );
 
-        if ( $args ) {
-            return $wpdb->get_results( $wpdb->prepare( $sql, ...$args ) );
+        $rows = $args ? $wpdb->get_results( $wpdb->prepare( $sql, ...$args ) ) : $wpdb->get_results( $sql );
+
+        if ( $with_labels ) {
+            return array(
+                'rows'   => $rows,
+                'labels' => array(
+                    'discount' => 'discount_amount',
+                    'reward'   => 'reward_amount',
+                ),
+            );
         }
 
-        return $wpdb->get_results( $sql );
+        return $rows;
     }
 
     /**
@@ -245,10 +273,11 @@ class Ecosplay_Referrals_Store {
      *
      * @param string $period Grouping period (month|week).
      * @param int    $limit  Number of periods to return.
+     * @param bool   $with_labels Whether to include aggregation descriptors.
      *
      * @return array<string,mixed>
      */
-    public function get_usage_summary( $period = 'month', $limit = 6 ) {
+    public function get_usage_summary( $period = 'month', $limit = 6, $with_labels = false ) {
         global $wpdb;
 
         $period = in_array( $period, array( 'week', 'month' ), true ) ? $period : 'month';
@@ -262,7 +291,7 @@ class Ecosplay_Referrals_Store {
             $label_expr = "DATE_FORMAT(created_at, '%Y-%m')";
         }
 
-        $sql = "SELECT {$group_expr} AS period_key, {$label_expr} AS period_label, COUNT(*) AS conversions, COALESCE(SUM(discount_amount),0) AS total_discount
+        $sql = "SELECT {$group_expr} AS period_key, {$label_expr} AS period_label, COUNT(*) AS conversions, COALESCE(SUM(discount_amount),0) AS total_discount, COALESCE(SUM(reward_amount),0) AS total_reward
             FROM {$this->uses_table()}
             GROUP BY {$group_expr}
             ORDER BY period_key DESC
@@ -270,10 +299,19 @@ class Ecosplay_Referrals_Store {
 
         $entries = $wpdb->get_results( $wpdb->prepare( $sql, $limit ) );
 
-        return array(
+        $payload = array(
             'period'  => $period,
             'entries' => $entries,
         );
+
+        if ( $with_labels ) {
+            $payload['labels'] = array(
+                'discount' => 'total_discount',
+                'reward'   => 'total_reward',
+            );
+        }
+
+        return $payload;
     }
 
     /**
