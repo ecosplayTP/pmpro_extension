@@ -1,36 +1,55 @@
 # pmpro_extension
 
-template pour la création d'un plugin wordpress
-A partir ce ce code, il va falloir créer un mini plugin avec interface admin (dans un sous-menu à l'intérieur de `<div class="wp-menu-name">Adhésions</div>`) pour gérer les parainages.
-Le menu admin doit permettre de voir les codes actifs pour les utilisateurs avec compte niveau d'adhésion "premium".
-Voir les codes qui ont été utilisés
-Voir les crédits gagnés par des utilisateurs (afin de voir qui on doit rembourser)
-Il faut créer une batadase qui contient toutes les informations utilisateurs centralisées.
-Je veux un interface avec des statistiques sur les codes utilisés, les temporalité, les sommes à veser etc...
-Il faudrait pouvoir afficher par dessus le site, il fenêtre flottante pour rappeler l'existance du système de parrainage et enregistrer en base si l'utilisateur à déjà vu ou non la notification. Il faut pouvoir dans l'interface admin, remettre à zéro cette information pour relancer une campagne de communication.
-Il faut pouvoir paramétrer le niveau de remise pour le parrainé et le gain pour le parrain dans l'interface.
-Il faut pouvoir remettre à jour manuellement le code de parrainage pour tous les utilisateurs ou pour un seul (histoire que les codes ne soit pas valable à vie pour question de sécurité)
-Il faut un shortcode pour afficher pour les utilisateurs premium le nombre de points qu'ils ont gagné.
-n'utilise que php, html et JS.
+## Vue d'ensemble
+Ce projet fournit le plugin WordPress **ECOSplay Referrals** destiné à étendre Paid Memberships Pro avec un programme de parrainage complet pour les membres « premium ». Le cœur du plugin crée les tables personnalisées nécessaires, génère un code unique pour chaque utilisateur éligible, applique automatiquement les remises configurées au checkout et crédite les parrains lors des conversions. Une interface d'administration dédiée dans le menu « Adhésions » expose la gestion des codes, le suivi des usages, des statistiques synthétiques et les réglages métier. Côté front-end, une notification flottante promeut la campagne et enregistre son état de lecture tandis que des shortcodes permettent d'afficher les points gagnés et le lien de parrainage du membre connecté.
+
+## Fonctionnalités clés
+- **Provision des données** : création de trois tables (`wp_ecos_referrals`, `wp_ecos_referral_uses`, `wp_ecos_referral_notifications`) pour stocker les codes, les conversions et l'état des notifications.
+- **Génération automatique des codes** : attribution ou régénération d'un code unique à l'inscription et à la demande depuis l'administration.
+- **Intégration checkout PMPro** : champ dédié, validations avancées (nonce, adhésion active, anti auto-parrainage) et application dynamique de la remise configurée.
+- **Récompense des parrains** : journalisation des utilisations, calcul des crédits et agrégation des totaux à reverser.
+- **Interface d'administration** (sous-menu « Parrainages » dans « Adhésions ») :
+  - *Codes actifs* : liste des codes premium, régénération unitaire ou globale, remise à zéro des notifications.
+  - *Historique* : journal filtrable des usages avec montant accordé et lien vers les parrains.
+  - *Statistiques* : synthèse hebdomadaire/mensuelle des conversions et montants remisés.
+  - *Réglages* : configuration des montants de remise et de récompense via la Settings API.
+- **Notification flottante front-end** : bannière AJAX avec cookie et persistance par utilisateur, réinitialisable depuis l'admin.
+- **Shortcodes premium** : `[ecos_referral_points]` pour afficher les crédits gagnés et `[ecos_referral_link]` pour générer un lien de parrainage personnalisé.
+- **Pré-remplissage marketing** : capture du paramètre `?ref=` et mémorisation temporaire pour les conversions ultérieures.
 
 ## Arborescence du plugin
-
 ```
 wp-content/
 └── plugins/
     └── ecosplay-referrals/
-        ├── ecosplay-referrals.php     # Point d'entrée du plugin, charge les constantes, l'autoloader et les hooks d'activation.
+        ├── ecosplay-referrals.php            # Point d'entrée : constantes, autoload, hooks d'activation et bootstrap.
         ├── includes/
-        │   └── index.php               # Garde de sécurité pour empêcher l'accès direct au dossier des fonctionnalités partagées.
+        │   ├── index.php                     # Garde de sécurité pour l'accès direct.
+        │   ├── class-referrals-store.php     # Accès aux tables personnalisées et opérations SQL.
+        │   ├── class-referrals-service.php   # Logique métier du programme de parrainage.
+        │   └── class-referrals-shortcodes.php # Shortcodes front-end pour points et lien.
         ├── admin/
-        │   └── index.php               # Garde de sécurité pour les composants de l'interface d'administration.
+        │   ├── index.php                     # Protection d'accès direct.
+        │   ├── class-admin-menu.php          # Déclaration du sous-menu et dispatch des onglets.
+        │   ├── class-admin-codes-page.php    # Gestion de la liste des codes et actions de maintenance.
+        │   ├── class-admin-usage-page.php    # Historique des utilisations de codes.
+        │   ├── class-admin-stats-page.php    # Agrégats statistiques pour le tableau de bord.
+        │   ├── class-admin-settings.php      # Intégration Settings API pour montants de remise/récompense.
+        │   └── views/
+        │       ├── codes.php                 # Gabarit de la liste des codes et formulaires d'actions.
+        │       ├── usage.php                 # Vue du journal des utilisations.
+        │       ├── stats.php                 # Présentation des statistiques agrégées.
+        │       └── settings.php              # Formulaire des réglages du programme.
         ├── public/
-        │   └── index.php               # Garde de sécurité pour les ressources front-office.
+        │   ├── index.php                     # Garde d'accès pour les ressources publiques.
+        │   └── class-floating-notice.php     # Notification flottante et gestion AJAX côté visiteur.
         └── assets/
             ├── css/
-            │   └── index.php           # Garde de sécurité pour les feuilles de style du plugin.
+            │   ├── index.php                 # Garde d'accès.
+            │   ├── admin.css                 # Styles de l'interface d'administration.
+            │   └── floating-notice.css       # Styles de la notification front-end.
             └── js/
-                └── index.php           # Garde de sécurité pour les scripts JavaScript du plugin.
+                ├── index.php                 # Garde d'accès.
+                ├── admin.js                  # Interactions JS pour les écrans d'administration.
+                └── floating-notice.js        # Script de gestion de la notification flottante.
 ```
-
-Chaque dossier est prêt à accueillir les classes et scripts dédiés (logique partagée, administration, affichage public, ressources statiques) en respectant l'autoloader déclaré dans `ecosplay-referrals.php`.
