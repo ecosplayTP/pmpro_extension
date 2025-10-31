@@ -24,11 +24,12 @@ class Ecosplay_Referrals_Admin_Settings {
     /**
      * Default configuration values.
      *
-     * @var array<string,float>
+     * @var array<string,mixed>
      */
     protected $defaults = array(
         'discount_amount' => Ecosplay_Referrals_Service::DISCOUNT_EUR,
         'reward_amount'   => Ecosplay_Referrals_Service::REWARD_POINTS,
+        'allowed_levels'  => Ecosplay_Referrals_Service::DEFAULT_ALLOWED_LEVELS,
     );
 
     /**
@@ -49,6 +50,7 @@ class Ecosplay_Referrals_Admin_Settings {
         add_action( 'admin_init', array( $this, 'register_settings' ) );
         add_filter( 'ecosplay_referrals_discount_amount', array( $this, 'filter_discount' ) );
         add_filter( 'ecosplay_referrals_reward_amount', array( $this, 'filter_reward' ) );
+        add_filter( 'ecosplay_referrals_allowed_levels', array( $this, 'filter_allowed_levels' ) );
     }
 
     /**
@@ -106,6 +108,21 @@ class Ecosplay_Referrals_Admin_Settings {
             'ecosplay_referrals',
             'ecos_referrals_amounts'
         );
+
+        add_settings_section(
+            'ecos_referrals_levels',
+            __( 'Niveaux éligibles', 'ecosplay-referrals' ),
+            '__return_false',
+            'ecosplay_referrals'
+        );
+
+        add_settings_field(
+            'ecos_referrals_allowed_levels',
+            __( 'Identifiants ou slugs autorisés', 'ecosplay-referrals' ),
+            array( $this, 'render_allowed_levels_field' ),
+            'ecosplay_referrals',
+            'ecos_referrals_levels'
+        );
     }
 
     /**
@@ -113,16 +130,18 @@ class Ecosplay_Referrals_Admin_Settings {
      *
      * @param array<string,mixed> $input Raw submitted values.
      *
-     * @return array<string,float>
+     * @return array<string,mixed>
      */
     public function sanitize_options( $input ) {
         $sanitized = array();
 
         $discount = isset( $input['discount_amount'] ) ? $this->sanitize_amount( $input['discount_amount'] ) : $this->defaults['discount_amount'];
         $reward   = isset( $input['reward_amount'] ) ? $this->sanitize_amount( $input['reward_amount'] ) : $this->defaults['reward_amount'];
+        $levels   = isset( $input['allowed_levels'] ) ? $this->sanitize_allowed_levels( $input['allowed_levels'] ) : $this->defaults['allowed_levels'];
 
         $sanitized['discount_amount'] = $discount;
         $sanitized['reward_amount']   = $reward;
+        $sanitized['allowed_levels']  = $levels;
 
         add_settings_error( 'ecosplay_referrals', 'settings_saved', __( 'Réglages enregistrés.', 'ecosplay-referrals' ), 'updated' );
 
@@ -173,6 +192,25 @@ class Ecosplay_Referrals_Admin_Settings {
     }
 
     /**
+     * Displays the allowed levels textarea field.
+     *
+     * @return void
+     */
+    public function render_allowed_levels_field() {
+        $options = $this->get_options();
+        $levels  = isset( $options['allowed_levels'] ) ? (array) $options['allowed_levels'] : $this->defaults['allowed_levels'];
+        $value   = implode( "\n", array_map( 'strval', $levels ) );
+
+        printf(
+            '<textarea class="large-text code" rows="4" name="%1$s[allowed_levels]" placeholder="pmpro_role_2">%2$s</textarea>' .
+            '<p class="description">%3$s</p>',
+            esc_attr( $this->option_name ),
+            esc_textarea( $value ),
+            esc_html__( 'Un identifiant ou slug par ligne.', 'ecosplay-referrals' )
+        );
+    }
+
+    /**
      * Adjusts the discount amount exposed to the front end.
      *
      * @param float $value Default discount.
@@ -207,9 +245,26 @@ class Ecosplay_Referrals_Admin_Settings {
     }
 
     /**
+     * Adjusts the allowed membership level list exposed to the service.
+     *
+     * @param array<int|string> $values Default allow list.
+     *
+     * @return array<int|string>
+     */
+    public function filter_allowed_levels( $values ) {
+        $options = $this->get_options();
+
+        if ( isset( $options['allowed_levels'] ) ) {
+            return (array) $options['allowed_levels'];
+        }
+
+        return (array) $values;
+    }
+
+    /**
      * Retrieves the persisted options merged with defaults.
      *
-     * @return array<string,float>
+     * @return array<string,mixed>
      */
     protected function get_options() {
         $stored = get_option( $this->option_name, array() );
@@ -236,5 +291,37 @@ class Ecosplay_Referrals_Admin_Settings {
         }
 
         return round( $amount, 2 );
+    }
+
+    /**
+     * Normalizes the multiline allow list input.
+     *
+     * @param mixed $value Raw field content.
+     *
+     * @return array<int|string>
+     */
+    protected function sanitize_allowed_levels( $value ) {
+        if ( is_array( $value ) ) {
+            $lines = $value;
+        } else {
+            $lines = preg_split( '/\r\n|\r|\n/', (string) $value );
+        }
+
+        $sanitized = array();
+
+        foreach ( (array) $lines as $line ) {
+            if ( is_numeric( $line ) ) {
+                $sanitized[] = (int) $line;
+                continue;
+            }
+
+            $key = sanitize_key( $line );
+
+            if ( '' !== $key ) {
+                $sanitized[] = $key;
+            }
+        }
+
+        return array_values( array_unique( $sanitized, SORT_REGULAR ) );
     }
 }
