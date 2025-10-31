@@ -20,6 +20,7 @@ class Ecosplay_Referrals_Service {
     const COOKIE_NAME   = 'ecos_referral_hint';
     const DISCOUNT_EUR  = 10.0;
     const REWARD_POINTS = 10.0;
+    const DEFAULT_ALLOWED_LEVELS = array( 'pmpro_role_2' );
 
     /**
      * Storage layer implementation.
@@ -531,22 +532,10 @@ class Ecosplay_Referrals_Service {
         $allowed_levels = $this->get_allowed_level_ids();
 
         if ( empty( $allowed_levels ) ) {
-            return null !== $level;
-        }
-
-        if ( null === $level ) {
             return false;
         }
 
-        if ( is_object( $level ) && isset( $level->id ) ) {
-            return in_array( (int) $level->id, $allowed_levels, true );
-        }
-
-        if ( is_numeric( $level ) ) {
-            return in_array( (int) $level, $allowed_levels, true );
-        }
-
-        return false;
+        return $this->level_matches_allowed( $level, $allowed_levels );
     }
 
     /**
@@ -566,25 +555,86 @@ class Ecosplay_Referrals_Service {
         $levels = $this->get_allowed_level_ids();
 
         if ( empty( $levels ) ) {
-            return pmpro_hasMembershipLevel( null, $user_id );
+            return false;
         }
 
         return pmpro_hasMembershipLevel( $levels, $user_id );
     }
 
     /**
-     * Returns the configured membership level identifiers eligible for referrals.
+     * Returns the configured membership level identifiers or slugs eligible for referrals.
      *
-     * @return array<int>
+     * @return array<int|string>
      */
     private function get_allowed_level_ids() {
-        $levels = apply_filters( 'ecosplay_referrals_allowed_levels', array() );
+        $levels = apply_filters( 'ecosplay_referrals_allowed_levels', self::DEFAULT_ALLOWED_LEVELS );
+        $clean  = array();
 
-        if ( empty( $levels ) ) {
-            return array();
+        foreach ( (array) $levels as $value ) {
+            if ( is_numeric( $value ) ) {
+                $clean[] = (int) $value;
+                continue;
+            }
+
+            if ( is_string( $value ) ) {
+                $key = sanitize_key( $value );
+
+                if ( '' !== $key ) {
+                    $clean[] = $key;
+                }
+            }
         }
 
-        return array_values( array_unique( array_filter( array_map( 'intval', (array) $levels ) ) ) );
+        return array_values( array_unique( $clean, SORT_REGULAR ) );
+    }
+
+    /**
+     * Evaluates a membership level against the configured allow list.
+     *
+     * @param mixed        $level          Level reference from PMPro.
+     * @param array<mixed> $allowed_levels Normalized configuration values.
+     *
+     * @return bool
+     */
+    private function level_matches_allowed( $level, array $allowed_levels ) {
+        if ( null === $level ) {
+            return false;
+        }
+
+        $ids   = array();
+        $slugs = array();
+
+        if ( is_object( $level ) ) {
+            if ( isset( $level->ID ) ) {
+                $ids[] = (int) $level->ID;
+            }
+
+            if ( isset( $level->id ) ) {
+                $ids[] = (int) $level->id;
+            }
+
+            if ( isset( $level->name ) && is_string( $level->name ) ) {
+                $slugs[] = sanitize_key( $level->name );
+            }
+        } elseif ( is_numeric( $level ) ) {
+            $ids[] = (int) $level;
+        } elseif ( is_string( $level ) ) {
+            $slugs[] = sanitize_key( $level );
+        }
+
+        foreach ( $ids as $id ) {
+            if ( in_array( $id, $allowed_levels, true ) ) {
+                return true;
+            }
+        }
+
+        foreach ( $slugs as $slug ) {
+            if ( '' !== $slug && in_array( $slug, $allowed_levels, true ) ) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
