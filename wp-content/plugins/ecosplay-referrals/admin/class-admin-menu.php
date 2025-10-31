@@ -64,13 +64,13 @@ class Ecosplay_Referrals_Admin_Menu {
     }
 
     /**
-     * Registers the submenu under Paid Memberships Pro.
+     * Registers the submenu under Paid Memberships Pro with legacy fallback.
      *
      * @return void
      */
     public function register_menu() {
         $this->page_hook = add_submenu_page(
-            'pmpro-membershiplevels',
+            'pmpro-dashboard',
             __( 'Parrainages ECOSplay', 'ecosplay-referrals' ),
             __( 'Parrainages', 'ecosplay-referrals' ),
             'manage_options',
@@ -78,7 +78,20 @@ class Ecosplay_Referrals_Admin_Menu {
             array( $this, 'render_page' )
         );
 
-        add_action( 'load-' . $this->page_hook, array( $this, 'prepare_page' ) );
+        if ( false === $this->page_hook ) {
+            $this->page_hook = add_submenu_page(
+                'pmpro-membershiplevels',
+                __( 'Parrainages ECOSplay', 'ecosplay-referrals' ),
+                __( 'Parrainages', 'ecosplay-referrals' ),
+                'manage_options',
+                'ecosplay-referrals',
+                array( $this, 'render_page' )
+            );
+        }
+
+        if ( $this->page_hook ) {
+            add_action( 'load-' . $this->page_hook, array( $this, 'prepare_page' ) );
+        }
     }
 
     /**
