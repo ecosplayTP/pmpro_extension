@@ -382,6 +382,48 @@ class Ecosplay_Referrals_Service {
     }
 
     /**
+     * Returns the total referral points earned by a member.
+     *
+     * @param int $user_id User identifier.
+     *
+     * @return float
+     */
+    public function get_member_points( $user_id ) {
+        $user_id = (int) $user_id;
+
+        if ( $user_id <= 0 ) {
+            return 0.0;
+        }
+
+        return $this->store->get_member_credits( $user_id );
+    }
+
+    /**
+     * Retrieves or provisions the referral code for a member.
+     *
+     * @param int $user_id User identifier.
+     *
+     * @return string
+     */
+    public function get_member_code( $user_id ) {
+        $user_id = (int) $user_id;
+
+        if ( $user_id <= 0 ) {
+            return '';
+        }
+
+        $record = $this->store->get_referral_by_user( $user_id );
+
+        if ( $record && ! empty( $record->code ) ) {
+            return (string) $record->code;
+        }
+
+        $generated = $this->store->regenerate_code( $user_id );
+
+        return false === $generated ? '' : (string) $generated;
+    }
+
+    /**
      * Normalises referral input to a comparable format.
      *
      * @param string $value Raw referral value.

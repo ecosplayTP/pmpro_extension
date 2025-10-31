@@ -144,8 +144,10 @@ function ecosplay_referrals_boot() {
     }
 
     require_once ECOSPLAY_REFERRALS_PUBLIC . 'class-floating-notice.php';
+    require_once ECOSPLAY_REFERRALS_INC . 'class-referrals-shortcodes.php';
 
     new Ecosplay_Referrals_Floating_Notice( $service );
+    new Ecosplay_Referrals_Shortcodes( $service );
 }
 
 add_action( 'plugins_loaded', 'ecosplay_referrals_boot' );
