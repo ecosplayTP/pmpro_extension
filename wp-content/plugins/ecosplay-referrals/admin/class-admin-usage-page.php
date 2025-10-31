@@ -81,7 +81,14 @@ class Ecosplay_Referrals_Admin_Usage_Page {
     public function render() {
         $limit = isset( $_GET['per_page'] ) ? max( 1, absint( $_GET['per_page'] ) ) : 50;
 
-        $this->usage = $this->service->get_usage_history( $this->referral_id, $limit );
+        $history = $this->service->get_usage_history( $this->referral_id, $limit, true );
+
+        if ( isset( $history['rows'] ) ) {
+            $this->usage = $history['rows'];
+        } else {
+            $this->usage = is_array( $history ) ? $history : array();
+        }
+
         $codes       = $this->service->get_codes_overview( false );
         $codes_index = array();
 
@@ -89,8 +96,18 @@ class Ecosplay_Referrals_Admin_Usage_Page {
             $codes_index[ $code->id ] = $code;
         }
 
-        $usage       = $this->usage;
-        $referral_id = $this->referral_id;
+        $usage         = $this->usage;
+        $referral_id   = $this->referral_id;
+        $column_keys   = isset( $history['labels'] ) ? $history['labels'] : array();
+        $column_labels = array();
+
+        if ( isset( $column_keys['discount'] ) ) {
+            $column_labels['discount'] = __( 'Remise (€)', 'ecosplay-referrals' );
+        }
+
+        if ( isset( $column_keys['reward'] ) ) {
+            $column_labels['reward'] = __( 'Récompense (€)', 'ecosplay-referrals' );
+        }
 
         include ECOSPLAY_REFERRALS_ADMIN . 'views/usage.php';
     }

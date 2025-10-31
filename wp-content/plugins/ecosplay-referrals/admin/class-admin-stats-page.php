@@ -71,12 +71,33 @@ class Ecosplay_Referrals_Admin_Stats_Page {
         $period = isset( $_GET['period'] ) ? sanitize_key( wp_unslash( $_GET['period'] ) ) : 'month';
         $limit  = isset( $_GET['points'] ) ? max( 1, absint( $_GET['points'] ) ) : 6;
 
-        $snapshot = $this->service->get_stats_snapshot( $period, $limit );
+        $snapshot = $this->service->get_stats_snapshot( $period, $limit, true );
         $total    = $this->service->get_total_credits_due();
 
-        $stats  = $snapshot;
-        $amount = $total;
-        $period = $snapshot['period'];
+        $stats   = $snapshot;
+        $amount  = $total;
+        $period  = $snapshot['period'];
+        $labels  = array();
+        $label_keys = isset( $snapshot['labels'] ) ? $snapshot['labels'] : array();
+
+        if ( isset( $label_keys['discount'] ) ) {
+            $labels['discount'] = __( 'Remises totales (€)', 'ecosplay-referrals' );
+        }
+
+        if ( isset( $label_keys['reward'] ) ) {
+            $labels['reward'] = __( 'Récompenses totales (€)', 'ecosplay-referrals' );
+        }
+        $totals = array(
+            'discount' => 0.0,
+            'reward'   => 0.0,
+        );
+
+        if ( ! empty( $stats['entries'] ) ) {
+            foreach ( $stats['entries'] as $entry ) {
+                $totals['discount'] += (float) $entry->total_discount;
+                $totals['reward']   += (float) $entry->total_reward;
+            }
+        }
 
         include ECOSPLAY_REFERRALS_ADMIN . 'views/stats.php';
     }
