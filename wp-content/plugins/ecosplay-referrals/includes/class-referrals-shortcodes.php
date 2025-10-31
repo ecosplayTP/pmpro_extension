@@ -126,9 +126,9 @@ class Ecosplay_Referrals_Shortcodes {
     }
 
     /**
-     * Validates if the current user is an eligible premium member.
+     * Validates if the current user is an eligible premium member via the service helper.
      *
-     * @return int
+     * @return int Authorized user identifier or zero when unavailable.
      */
     protected function resolve_authorized_user() {
         if ( ! is_user_logged_in() ) {
@@ -141,11 +141,7 @@ class Ecosplay_Referrals_Shortcodes {
             return 0;
         }
 
-        if ( ! function_exists( 'pmpro_hasMembershipLevel' ) ) {
-            return 0;
-        }
-
-        if ( ! pmpro_hasMembershipLevel( 'premium', $user_id ) ) {
+        if ( ! $this->service->is_user_allowed( $user_id ) ) {
             return 0;
         }
 

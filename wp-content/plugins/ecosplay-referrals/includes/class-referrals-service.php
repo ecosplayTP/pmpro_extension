@@ -269,14 +269,33 @@ class Ecosplay_Referrals_Service {
     }
 
     /**
-     * Exposes a snapshot of referral codes for admin use.
+     * Exposes a snapshot of referral codes for admin use restricted to eligible members.
      *
      * @param bool $only_active Whether to limit to active codes.
      *
      * @return array<int,object>
      */
     public function get_codes_overview( $only_active = true ) {
-        return $this->store->get_active_codes( $only_active );
+        $records = $this->store->get_active_codes( $only_active );
+
+        if ( empty( $records ) ) {
+            return array();
+        }
+
+        return array_values(
+            array_filter(
+                $records,
+                function ( $record ) {
+                    $user_id = isset( $record->user_id ) ? (int) $record->user_id : 0;
+
+                    if ( $user_id <= 0 ) {
+                        return false;
+                    }
+
+                    return $this->is_user_allowed( $user_id );
+                }
+            )
+        );
     }
 
     /**
@@ -545,7 +564,7 @@ class Ecosplay_Referrals_Service {
      *
      * @return bool
      */
-    private function is_user_allowed( $user_id ) {
+    public function is_user_allowed( $user_id ) {
         $user_id = (int) $user_id;
 
         if ( $user_id <= 0 || ! function_exists( 'pmpro_hasMembershipLevel' ) ) {

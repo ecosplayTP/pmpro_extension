@@ -17,6 +17,13 @@ Ce projet fournit le plugin WordPress **ECOSplay Referrals** destiné à étendr
 - **Shortcodes premium** : `[ecos_referral_points]` pour afficher les crédits gagnés et `[ecos_referral_link]` pour générer un lien de parrainage personnalisé.
 - **Pré-remplissage marketing** : capture du paramètre `?ref=` et mémorisation temporaire pour les conversions ultérieures.
 
+## Tests
+
+### Tests manuels
+1. Se connecter avec un compte standard (sans niveau autorisé), afficher une page contenant les shortcodes `[ecos_referral_points]` et `[ecos_referral_link]` et vérifier qu'aucun contenu n'est rendu.
+2. Se connecter avec un membre disposant d'un niveau de la liste autorisée (ex. `pmpro_role_2`), recharger la même page et constater l'affichage des points et du lien de parrainage.
+3. Ouvrir l'écran « Codes de parrainage » dans l'administration, confirmer que seuls les comptes autorisés apparaissent et que les comptes standards sont absents de la liste.
+
 ## Arborescence du plugin
 ```
 wp-content/
