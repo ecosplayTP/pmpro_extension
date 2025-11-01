@@ -17,7 +17,7 @@ class Ecosplay_Referrals_Floating_Notice {
     const COOKIE_NAME   = 'ecos_referrals_notice_seen';
     const AJAX_ACTION   = 'ecosplay_referrals_notice_dismiss';
     const NONCE_ACTION  = 'ecosplay_referrals_notice';
-    const COOKIE_TTL    = WEEK_IN_SECONDS;
+    const COOKIE_TTL    = YEAR_IN_SECONDS;
 
     /**
      * Referrals service dependency.
@@ -80,6 +80,7 @@ class Ecosplay_Referrals_Floating_Notice {
                 'action'     => self::AJAX_ACTION,
                 'nonce'      => wp_create_nonce( self::NONCE_ACTION ),
                 'cookieName' => self::COOKIE_NAME,
+                'version'    => $this->service->get_notice_version(),
             )
         );
     }
@@ -93,11 +94,16 @@ class Ecosplay_Referrals_Floating_Notice {
         if ( ! $this->should_display_notice() ) {
             return;
         }
+        $message = trim( $this->service->get_notice_message() );
+
+        if ( '' === $message ) {
+            return;
+        }
         ?>
         <div class="ecosplay-floating-notice" role="dialog" aria-live="polite" aria-label="<?php esc_attr_e( 'Notification de parrainage', 'ecosplay-referrals' ); ?>">
             <div class="ecosplay-floating-notice__body">
                 <p class="ecosplay-floating-notice__text">
-                    <?php esc_html_e( 'Parrainez vos amis pour cumuler des récompenses ECOSplay.', 'ecosplay-referrals' ); ?>
+                    <?php echo wp_kses_post( nl2br( esc_html( $message ) ) ); ?>
                 </p>
                 <button type="button" class="ecosplay-floating-notice__close" data-ecosplay-close aria-label="<?php esc_attr_e( 'Fermer la notification', 'ecosplay-referrals' ); ?>">
                     &times;
@@ -121,7 +127,7 @@ class Ecosplay_Referrals_Floating_Notice {
             $this->service->mark_notification_seen( $user_id );
         }
 
-        $this->set_notice_cookie();
+        $this->set_notice_cookie( $this->service->get_notice_version() );
 
         wp_send_json_success( array( 'status' => 'dismissed' ) );
     }
@@ -161,6 +167,12 @@ class Ecosplay_Referrals_Floating_Notice {
             return false;
         }
 
+        if ( '' === trim( $this->service->get_notice_message() ) ) {
+            $this->should_render = false;
+
+            return false;
+        }
+
         $this->should_render = ! $this->has_user_seen_notice();
 
         return $this->should_render;
@@ -178,18 +190,26 @@ class Ecosplay_Referrals_Floating_Notice {
             return $this->service->has_seen_notification( $user_id );
         }
 
-        return ! empty( $_COOKIE[ self::COOKIE_NAME ] );
+        if ( empty( $_COOKIE[ self::COOKIE_NAME ] ) ) {
+            return false;
+        }
+
+        $version = $this->service->get_notice_version();
+
+        return absint( $_COOKIE[ self::COOKIE_NAME ] ) >= $version;
     }
 
     /**
-     * Persists a short-lived cookie marking the notice as viewed.
+     * Persists a persistent cookie marking the notice dismissal for guests.
+     *
+     * @param int $version Notice version to store.
      *
      * @return void
      */
-    protected function set_notice_cookie() {
+    protected function set_notice_cookie( $version ) {
         setcookie(
             self::COOKIE_NAME,
-            '1',
+            (string) absint( $version ),
             time() + self::COOKIE_TTL,
             COOKIEPATH ? COOKIEPATH : '/',
             COOKIE_DOMAIN,
@@ -197,6 +217,6 @@ class Ecosplay_Referrals_Floating_Notice {
             false
         );
 
-        $_COOKIE[ self::COOKIE_NAME ] = '1';
+        $_COOKIE[ self::COOKIE_NAME ] = (string) absint( $version );
     }
 }
