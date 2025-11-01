@@ -30,6 +30,7 @@ class Ecosplay_Referrals_Admin_Settings {
         'discount_amount' => Ecosplay_Referrals_Service::DISCOUNT_EUR,
         'reward_amount'   => Ecosplay_Referrals_Service::REWARD_POINTS,
         'allowed_levels'  => Ecosplay_Referrals_Service::DEFAULT_ALLOWED_LEVELS,
+        'notice_message'  => Ecosplay_Referrals_Service::DEFAULT_NOTICE_MESSAGE,
     );
 
     /**
@@ -51,6 +52,7 @@ class Ecosplay_Referrals_Admin_Settings {
         add_filter( 'ecosplay_referrals_discount_amount', array( $this, 'filter_discount' ) );
         add_filter( 'ecosplay_referrals_reward_amount', array( $this, 'filter_reward' ) );
         add_filter( 'ecosplay_referrals_allowed_levels', array( $this, 'filter_allowed_levels' ) );
+        add_filter( 'ecosplay_referrals_notice_message', array( $this, 'filter_notice_message' ) );
     }
 
     /**
@@ -123,6 +125,21 @@ class Ecosplay_Referrals_Admin_Settings {
             'ecosplay_referrals',
             'ecos_referrals_levels'
         );
+
+        add_settings_section(
+            'ecos_referrals_notice',
+            __( 'Notification front-end', 'ecosplay-referrals' ),
+            '__return_false',
+            'ecosplay_referrals'
+        );
+
+        add_settings_field(
+            'ecos_referrals_notice_message',
+            __( 'Message affiché', 'ecosplay-referrals' ),
+            array( $this, 'render_notice_message_field' ),
+            'ecosplay_referrals',
+            'ecos_referrals_notice'
+        );
     }
 
     /**
@@ -138,10 +155,12 @@ class Ecosplay_Referrals_Admin_Settings {
         $discount = isset( $input['discount_amount'] ) ? $this->sanitize_amount( $input['discount_amount'] ) : $this->defaults['discount_amount'];
         $reward   = isset( $input['reward_amount'] ) ? $this->sanitize_amount( $input['reward_amount'] ) : $this->defaults['reward_amount'];
         $levels   = isset( $input['allowed_levels'] ) ? $this->sanitize_allowed_levels( $input['allowed_levels'] ) : $this->defaults['allowed_levels'];
+        $message  = isset( $input['notice_message'] ) ? $this->sanitize_notice_message( $input['notice_message'] ) : $this->defaults['notice_message'];
 
         $sanitized['discount_amount'] = $discount;
         $sanitized['reward_amount']   = $reward;
         $sanitized['allowed_levels']  = $levels;
+        $sanitized['notice_message']  = $message;
 
         add_settings_error( 'ecosplay_referrals', 'settings_saved', __( 'Réglages enregistrés.', 'ecosplay-referrals' ), 'updated' );
 
@@ -211,6 +230,24 @@ class Ecosplay_Referrals_Admin_Settings {
     }
 
     /**
+     * Displays the floating notice message field.
+     *
+     * @return void
+     */
+    public function render_notice_message_field() {
+        $options = $this->get_options();
+        $message = isset( $options['notice_message'] ) ? (string) $options['notice_message'] : $this->defaults['notice_message'];
+
+        printf(
+            '<textarea class="large-text" rows="3" name="%1$s[notice_message]" placeholder="Parrainez vos amis">%2$s</textarea>' .
+            '<p class="description">%3$s</p>',
+            esc_attr( $this->option_name ),
+            esc_textarea( $message ),
+            esc_html__( 'Texte présenté dans la notification flottante.', 'ecosplay-referrals' )
+        );
+    }
+
+    /**
      * Adjusts the discount amount exposed to the front end.
      *
      * @param float $value Default discount.
@@ -259,6 +296,23 @@ class Ecosplay_Referrals_Admin_Settings {
         }
 
         return (array) $values;
+    }
+
+    /**
+     * Adjusts the floating notice message exposed to the UI.
+     *
+     * @param string $value Default message.
+     *
+     * @return string
+     */
+    public function filter_notice_message( $value ) {
+        $options = $this->get_options();
+
+        if ( isset( $options['notice_message'] ) ) {
+            return (string) $options['notice_message'];
+        }
+
+        return (string) $value;
     }
 
     /**
@@ -323,5 +377,22 @@ class Ecosplay_Referrals_Admin_Settings {
         }
 
         return array_values( array_unique( $sanitized, SORT_REGULAR ) );
+    }
+
+    /**
+     * Normalizes the floating notice message input.
+     *
+     * @param mixed $value Raw input value.
+     *
+     * @return string
+     */
+    protected function sanitize_notice_message( $value ) {
+        $message = sanitize_textarea_field( (string) $value );
+
+        if ( '' === trim( $message ) ) {
+            return $this->defaults['notice_message'];
+        }
+
+        return $message;
     }
 }

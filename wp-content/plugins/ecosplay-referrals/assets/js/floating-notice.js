@@ -41,8 +41,13 @@
     }
 
     function rememberDismissal() {
-        var expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-        var cookie = settings.cookieName + '=1; path=/; expires=' + expires.toUTCString() + '; SameSite=Lax';
+        var version = parseInt(settings.version, 10);
+        if (!version || version < 1) {
+            version = 1;
+        }
+
+        var expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+        var cookie = settings.cookieName + '=' + version + '; path=/; expires=' + expires.toUTCString() + '; SameSite=Lax';
 
         if (window.location && window.location.protocol === 'https:') {
             cookie += '; Secure';

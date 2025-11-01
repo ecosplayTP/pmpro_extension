@@ -21,6 +21,8 @@ class Ecosplay_Referrals_Service {
     const DISCOUNT_EUR  = 10.0;
     const REWARD_POINTS = 10.0;
     const DEFAULT_ALLOWED_LEVELS = array( 'pmpro_role_2' );
+    const DEFAULT_NOTICE_MESSAGE = 'Parrainez vos amis pour cumuler des récompenses ECOSplay.';
+    const NOTICE_VERSION_OPTION  = 'ecosplay_referrals_notice_version';
 
     /**
      * Storage layer implementation.
@@ -383,6 +385,10 @@ class Ecosplay_Referrals_Service {
 
         $this->store->reset_notification_flag( null === $user_id ? null : (int) $user_id );
 
+        if ( null === $user_id ) {
+            $this->bump_notice_version();
+        }
+
         return true;
     }
 
@@ -421,6 +427,43 @@ class Ecosplay_Referrals_Service {
      */
     public function get_total_credits_due() {
         return $this->store->get_total_credits();
+    }
+
+    /**
+     * Returns the configured floating notice message.
+     *
+     * @return string
+     */
+    public function get_notice_message() {
+        $default = __( self::DEFAULT_NOTICE_MESSAGE, 'ecosplay-referrals' );
+
+        return (string) apply_filters( 'ecosplay_referrals_notice_message', $default );
+    }
+
+    /**
+     * Returns the current dismissal version used for guests.
+     *
+     * @return int
+     */
+    public function get_notice_version() {
+        $version = (int) get_option( self::NOTICE_VERSION_OPTION, 1 );
+
+        if ( $version < 1 ) {
+            $version = 1;
+        }
+
+        return $version;
+    }
+
+    /**
+     * Increments the global notice version to invalidate guest cookies.
+     *
+     * @return void
+     */
+    public function bump_notice_version() {
+        $next = $this->get_notice_version() + 1;
+
+        update_option( self::NOTICE_VERSION_OPTION, $next, false );
     }
 
     /**
