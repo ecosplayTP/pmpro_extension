@@ -1,0 +1,209 @@
+Voici la checklist technique “à brancher” pour Connect (Express) dans ton plugin PMPro, avec les endpoints Stripe, webhooks et actions utiles.
+
+1) Onboarding du parrain (compte connecté Express)
+•	Créer le compte connecté : POST /v1/accounts
+Params clés : type=express, capabilities[transfers][requested]=true. Stocke acct_… dans user_meta. (Stripe Docs)
+curl https://api.stripe.com/v1/accounts \
+  -u "sk_test_51Q53P4CTXS4p1fEsjlgqP2RND00aqLrvFZU:" \
+  -d country=US \
+  --data-urlencode email="jenny.rosen@example.com" \
+  -d "controller[fees][payer]"=application \
+  -d "controller[losses][payments]"=application \
+  -d "controller[stripe_dashboard][type]"=express
+•	Option A — Onboarding hébergé (Account Links, préféré) : POST /v1/account_links
+Params : account, type=account_onboarding, refresh_url, return_url. Le lien est à usage unique ; ta refresh_url doit régénérer un nouveau lien si besoin. (Stripe Docs)
+•	Option B — Onboarding embarqué (Embedded, pas pour le moment) :
+1.	Créer une Account Session : POST /v1/account_sessions avec components[account_onboarding][enabled]=true.
+2.	Intégrer le composant “Account Onboarding” côté front. (Stripe Docs)
+•	Accès au tableau de bord Express (à faire) : POST /v1/accounts/{id}/login_links pour générer un lien de connexion ponctuel. (Stripe Docs) : Creates a login link for a connected account to access the Express Dashboard.
+curl -X POST https://api.stripe.com/v1/accounts/acct_1032D82eZvKYlo2C/login_links \
+  -u "sk_test_51Q53P4CTXS4p1fEsjlgqP2RND00aqLrvFZU:"
+2) Payer le parrain (cash-out)
+•	Transférer depuis ta balance plateforme vers le compte connecté : POST /v1/transfers (amount, currency, destination=acct_…, option transfer_group si tu veux chaîner à un lot). Stripe s’occupe ensuite du payout bancaire du compte connecté. (Stripe Docs)
+•	Alimenter ta balance si besoin (hors flux de ventes) : POST /v1/topups (+ consulter/lister/cancel). (Stripe Docs)
+•	Vérifier ta balance (plateforme) avant transfert : GET /v1/balance. (Stripe Docs)`
+# Create a transfer
+
+To send funds from your Stripe account to a connected account, you create a new transfer object. Your [Stripe balance](https://docs.stripe.com/api/transfers/create.md#balance) must be able to cover the transfer amount, or you’ll receive an “Insufficient Funds” error.
+
+## Returns
+
+Returns a transfer object if there were no initial errors with the transfer creation (e.g., insufficient funds).
+
+## Parameters
+
+- `currency` (enum, required)
+  Three-letter [ISO code for currency](https://www.iso.org/iso-4217-currency-codes.html) in lowercase. Must be a [supported currency](https://docs.stripe.com/currencies.md).
+
+- `destination` (string, required)
+  The ID of a connected Stripe account. [See the Connect documentation](https://docs.stripe.com/docs/connect/separate-charges-and-transfers.md) for details.
+
+- `amount` (integer, required)
+  A positive integer in cents representing how much to transfer.
+
+- `description` (string, optional)
+  An arbitrary string attached to the object. Often useful for displaying to users.
+
+- `metadata` (object, optional)
+  Set of [key-value pairs](https://docs.stripe.com/docs/api/metadata.md) that you can attach to an object. This can be useful for storing additional information about the object in a structured format. Individual keys can be unset by posting an empty value to them. All keys can be unset by posting an empty value to `metadata`.
+
+- `source_transaction` (string, optional)
+  You can use this parameter to transfer funds from a charge before they are added to your available balance. A pending balance will transfer immediately but the funds will not become available until the original charge becomes available. [See the Connect documentation](https://docs.stripe.com/docs/connect/separate-charges-and-transfers.md#transfer-availability) for details.
+
+- `source_type` (string, optional)
+  The source balance to use for this transfer. One of `bank_account`, `card`, or `fpx`. For most users, this will default to `card`.
+
+- `transfer_group` (string, optional)
+  A string that identifies this transaction as part of a group. See the [Connect documentation](https://docs.stripe.com/docs/connect/separate-charges-and-transfers.md#transfer-options) for details.
+
+```curl
+curl https://api.stripe.com/v1/transfers \
+  -u "<<YOUR_SECRET_KEY>>" \
+  -d amount=400 \
+  -d currency=usd \
+  -d destination=acct_1MTfjCQ9PRzxEwkZ \
+  -d transfer_group=ORDER_95
+```
+Response
+{
+  "id": "tr_1MiN3gLkdIwHu7ixNCZvFdgA",
+  "object": "transfer",
+  "amount": 400,
+  "amount_reversed": 0,
+  "balance_transaction": "txn_1MiN3gLkdIwHu7ixxapQrznl",
+  "created": 1678043844,
+  "currency": "usd",
+  "description": null,
+  "destination": "acct_1MTfjCQ9PRzxEwkZ",
+  "destination_payment": "py_1MiN3gQ9PRzxEwkZWTPGNq9o",
+  "livemode": false,
+  "metadata": {},
+  "reversals": {
+    "object": "list",
+    "data": [],
+    "has_more": false,
+    "total_count": 0,
+    "url": "/v1/transfers/tr_1MiN3gLkdIwHu7ixNCZvFdgA/reversals"
+  },
+  "reversed": false,
+  "source_transaction": null,
+  "source_type": "card",
+  "transfer_group": "ORDER_95"
+}
+
+Verifier la balance : 
+curl https://api.stripe.com/v1/balance \
+  -u "sk_test_51Q53P4CTXS4p1fEsjlgqP2RND00aqLrvFZU:"
+The Balance object
+{
+  "object": "balance",
+  "available": [
+    {
+      "amount": 666670,
+      "currency": "usd",
+      "source_types": {
+        "card": 666670
+      }
+    }
+  ],
+  "connect_reserved": [
+    {
+      "amount": 0,
+      "currency": "usd"
+    }
+  ],
+  "livemode": false,
+  "pending": [
+    {
+      "amount": 61414,
+      "currency": "usd",
+      "source_types": {
+        "card": 61414
+      }
+    }
+  ]
+}
+
+
+# Create a top-up
+Top up the balance of an account
+## Returns
+Returns the top-up object.
+## Parameters
+- `amount` (integer, required)
+  A positive integer representing how much to transfer.
+- `currency` (string, required)
+  Three-letter [ISO currency code](https://www.iso.org/iso-4217-currency-codes.html), in lowercase. Must be a [supported currency](https://stripe.com/docs/currencies).
+- `description` (string, optional)
+  An arbitrary string attached to the object. Often useful for displaying to users.
+- `destination_balance` (enum, optional)
+  The balance to receive your Top-up. Can be either empty for your normal balance or `issuing`.
+- `metadata` (object, optional)
+  Set of [key-value pairs](https://docs.stripe.com/docs/api/metadata.md) that you can attach to an object. This can be useful for storing additional information about the object in a structured format. Individual keys can be unset by posting an empty value to them. All keys can be unset by posting an empty value to `metadata`.
+- `source` (string, optional)
+  The ID of a source to transfer funds from. For most users, this should be left unspecified which will use the bank account that was set up in the dashboard for the specified currency. In test mode, this can be a test bank token (see [Testing Top-ups](https://docs.stripe.com/docs/connect/testing.md#testing-top-ups)).
+- `statement_descriptor` (string, optional)
+  Extra information about a top-up for the source’s bank statement. Limited to 15 ASCII characters.
+- `transfer_group` (string, optional)
+  A string that identifies this top-up as part of a group.
+```curl
+curl https://api.stripe.com/v1/topups \
+  -u "<<YOUR_SECRET_KEY>>" \
+  -d amount=2000 \
+  -d currency=usd \
+  -d description="Top-up for Jenny Rosen" \
+  -d statement_descriptor=Top-up
+```
+Response
+{
+  "id": "tu_1NG6yj2eZvKYlo2C1FOBiHya",
+  "object": "topup",
+  "amount": 2000,
+  "balance_transaction": null,
+  "created": 123456789,
+  "currency": "usd",
+  "description": "Top-up for Jenny Rosen",
+  "expected_availability_date": 123456789,
+  "failure_code": null,
+  "failure_message": null,
+  "livemode": false,
+  "source": null,
+  "statement_descriptor": "Top-up",
+  "status": "pending",
+  "transfer_group": null
+}
+
+3) Payouts bancaires du compte connecté (planning)
+•	Automatique vs manuel : tu peux gérer le planning de payout du compte connecté.
+o	API historique : POST /v1/accounts/{id} avec settings[payouts][schedule][interval] (manual|daily|weekly|monthly) et delay_days. (Stripe Docs)
+o	API récente “Balance Settings” (recommandée par Stripe) : POST /v1/balance_settings avec l’en-tête Stripe-Account: acct_… → payments[payouts][schedule][interval]=manual|daily|…. (Stripe Docs)
+•	Agir “au nom du compte connecté” : ajoute l’en-tête Stripe-Account: acct_… sur les appels concernés (p. ex. mise à jour du schedule). (Stripe Docs)
+4) Webhooks à brancher (un seul endpoint peut recevoir tes événements de plateforme et ceux des comptes connectés)
+•	Configurer les webhooks et, si besoin, inclure les événements des connected accounts. (Stripe Docs)
+•	Événements minimum à écouter (et ce que tu fais côté plugin) :
+o	account.updated → suivre le KYC et l’activation de capabilities.transfers ; afficher l’état dans l’espace parrain. (Stripe Docs)
+o	transfer.created / transfer.failed / transfer.reversed → marquer tes lignes de ledger “paying/paid/failed”. (Stripe Docs)
+o	payout.created / payout.paid / payout.failed (du compte connecté) → journaliser le virement bancaire côté parrain. (Stripe Docs)
+o	topup.succeeded / topup.failed → débloquer les paiements batch si tu utilises des top-ups. (Stripe Docs)
+o	balance.available (plateforme) → tu peux déclencher des transfers auto quand fonds dispos. (Stripe Docs)
+5) Actions côté plugin (UX & data)
+•	Admin → “Primes de parrainage”
+o	Lister parrain, total_gagné, total_payé, solde, méthode (Stripe/PayPal), KYC, coordonnées (IBAN masqué), logs.
+o	Boutons : “Renvoyer lien d’onboarding” (Account Link), “Payer via Stripe” (/v1/transfers), “Top-up” si solde insuffisant, “Ouvrir Dashboard Express” (login link). (Stripe Docs)
+•	Espace parrain → “Mes gains”
+o	Choix du mode : “Virement bancaire (Stripe)” → lancer l’onboarding (Account Link/Embedded) → stocker acct_…. (Stripe Docs)
+o	Réclamer mon dû → créer un transfer (vérifier balance). Suivre le statut via webhooks. (Stripe Docs)
+6) Objets / entités à stocker
+•	user_meta : stripe_account_id (acct_…), connect_status (KYC/capability), payout_schedule (optionnel).
+•	ledger (table custom) : id, parrain_user_id, amount_cents, currency, source (code/parrainage/order_id), status (accrued|confirmed|paying|paid|failed), transfer_id, payout_id?, timestamps.
+•	payout_runs (optionnel) : pour grouper les paiements batch.
+________________________________________
+Références doc (Stripe)
+•	Express accounts (onboarding, Account Links, refresh/return) ; FR dispo. (Stripe Docs)
+•	Embedded onboarding + Account Session + composant Account Onboarding. (Stripe Docs)
+•	Transfers API, Top-ups API, Balance API. (Stripe Docs)
+•	Payout schedule (Accounts settings[payouts]) & Balance Settings API (planning manuel/auto). (Stripe Docs)
+•	Login link (Express Dashboard). (Stripe Docs)
+•	Webhooks (plateforme + connected accounts) & types d’événements. (Stripe Docs)
+•	Appels au nom d’un compte connecté (Stripe-Account header). (Stripe Docs)
+
