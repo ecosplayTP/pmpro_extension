@@ -33,6 +33,7 @@ class Ecosplay_Referrals_Admin_Settings {
         'notice_message'       => Ecosplay_Referrals_Service::DEFAULT_NOTICE_MESSAGE,
         'stripe_secret_key'    => '',
         'stripe_secret_exists' => false,
+        'stripe_enabled'       => false,
         'balance_alert_threshold' => 0.0,
     );
 
@@ -169,6 +170,14 @@ class Ecosplay_Referrals_Admin_Settings {
             'ecosplay_referrals',
             'ecos_referrals_stripe'
         );
+
+        add_settings_field(
+            'ecos_referrals_stripe_enabled',
+            __( 'Activer l’intégration Stripe', 'ecosplay-referrals' ),
+            array( $this, 'render_stripe_enabled_field' ),
+            'ecosplay_referrals',
+            'ecos_referrals_stripe'
+        );
     }
 
     /**
@@ -193,6 +202,7 @@ class Ecosplay_Referrals_Admin_Settings {
         $sanitized['allowed_levels']  = $levels;
         $sanitized['notice_message']  = $message;
         $sanitized['balance_alert_threshold'] = $threshold;
+        $sanitized['stripe_enabled']          = ! empty( $input['stripe_enabled'] );
 
         if ( null !== $secret ) {
             $sanitized['stripe_secret_key'] = $secret['cipher'];
@@ -412,6 +422,8 @@ class Ecosplay_Referrals_Admin_Settings {
 
         $merged = array_merge( $this->defaults, $stored );
 
+        $merged['stripe_enabled'] = ! empty( $merged['stripe_enabled'] );
+
         if ( ! empty( $merged['stripe_secret_key'] ) ) {
             $merged['stripe_secret_exists'] = true;
             $merged['stripe_secret_key']    = '';
@@ -421,6 +433,23 @@ class Ecosplay_Referrals_Admin_Settings {
         }
 
         return $merged;
+    }
+
+    /**
+     * Displays the Stripe enable toggle checkbox.
+     *
+     * @return void
+     */
+    public function render_stripe_enabled_field() {
+        $options = $this->get_options();
+        $checked = ! empty( $options['stripe_enabled'] );
+
+        printf(
+            '<label><input type="checkbox" name="%1$s[stripe_enabled]" value="1" %2$s /> %3$s</label>',
+            esc_attr( $this->option_name ),
+            checked( $checked, true, false ),
+            esc_html__( 'Activer l’intégration Stripe', 'ecosplay-referrals' )
+        );
     }
 
     /**
