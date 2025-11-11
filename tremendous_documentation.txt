@@ -103,6 +103,8 @@ JSON
   ]
 }
 
+"available_cents" représente l'argent qu'il reste sur l'accompte
+
 Topups represent transactions that add funds to your Tremendous account balance from a saved bank account or credit card. These transactions are initiated with an API request.
 
 To use topups, first add a bank account or credit card to your Tremendous account in the dashboard.
