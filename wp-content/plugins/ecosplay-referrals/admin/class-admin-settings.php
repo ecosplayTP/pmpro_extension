@@ -31,9 +31,14 @@ class Ecosplay_Referrals_Admin_Settings {
         'reward_amount'        => Ecosplay_Referrals_Service::REWARD_POINTS,
         'allowed_levels'       => Ecosplay_Referrals_Service::DEFAULT_ALLOWED_LEVELS,
         'notice_message'       => Ecosplay_Referrals_Service::DEFAULT_NOTICE_MESSAGE,
-        'stripe_secret_key'    => '',
-        'stripe_secret_exists' => false,
-        'stripe_enabled'       => false,
+        'stripe_secret_key'       => '',
+        'stripe_secret_exists'    => false,
+        'stripe_enabled'          => false,
+        'tremendous_secret_key'   => '',
+        'tremendous_secret_exists'=> false,
+        'tremendous_enabled'      => false,
+        'tremendous_campaign_id'  => '',
+        'tremendous_environment'  => 'production',
         'balance_alert_threshold' => 0.0,
     );
 
@@ -178,6 +183,45 @@ class Ecosplay_Referrals_Admin_Settings {
             'ecosplay_referrals',
             'ecos_referrals_stripe'
         );
+
+        add_settings_section(
+            'ecos_referrals_tremendous',
+            __( 'Tremendous', 'ecosplay-referrals' ),
+            '__return_false',
+            'ecosplay_referrals'
+        );
+
+        add_settings_field(
+            'ecos_referrals_tremendous_enabled',
+            __( 'Activer l’intégration Tremendous', 'ecosplay-referrals' ),
+            array( $this, 'render_tremendous_enabled_field' ),
+            'ecosplay_referrals',
+            'ecos_referrals_tremendous'
+        );
+
+        add_settings_field(
+            'ecos_referrals_tremendous_secret_key',
+            __( 'Clé API Tremendous', 'ecosplay-referrals' ),
+            array( $this, 'render_tremendous_secret_field' ),
+            'ecosplay_referrals',
+            'ecos_referrals_tremendous'
+        );
+
+        add_settings_field(
+            'ecos_referrals_tremendous_campaign_id',
+            __( 'Identifiant de campagne Tremendous', 'ecosplay-referrals' ),
+            array( $this, 'render_tremendous_campaign_field' ),
+            'ecosplay_referrals',
+            'ecos_referrals_tremendous'
+        );
+
+        add_settings_field(
+            'ecos_referrals_tremendous_environment',
+            __( 'Environnement Tremendous', 'ecosplay-referrals' ),
+            array( $this, 'render_tremendous_environment_field' ),
+            'ecosplay_referrals',
+            'ecos_referrals_tremendous'
+        );
     }
 
     /**
@@ -189,13 +233,21 @@ class Ecosplay_Referrals_Admin_Settings {
      */
     public function sanitize_options( $input ) {
         $sanitized = array();
+        $stored    = get_option( $this->option_name, array() );
 
-        $discount = isset( $input['discount_amount'] ) ? $this->sanitize_amount( $input['discount_amount'] ) : $this->defaults['discount_amount'];
-        $reward   = isset( $input['reward_amount'] ) ? $this->sanitize_amount( $input['reward_amount'] ) : $this->defaults['reward_amount'];
-        $levels   = isset( $input['allowed_levels'] ) ? $this->sanitize_allowed_levels( $input['allowed_levels'] ) : $this->defaults['allowed_levels'];
-        $message   = isset( $input['notice_message'] ) ? $this->sanitize_notice_message( $input['notice_message'] ) : $this->defaults['notice_message'];
-        $secret    = isset( $input['stripe_secret_key'] ) ? $this->sanitize_stripe_secret( $input['stripe_secret_key'] ) : null;
-        $threshold = isset( $input['balance_alert_threshold'] ) ? $this->sanitize_amount( $input['balance_alert_threshold'] ) : $this->defaults['balance_alert_threshold'];
+        if ( ! is_array( $stored ) ) {
+            $stored = array();
+        }
+
+        $discount          = isset( $input['discount_amount'] ) ? $this->sanitize_amount( $input['discount_amount'] ) : $this->defaults['discount_amount'];
+        $reward            = isset( $input['reward_amount'] ) ? $this->sanitize_amount( $input['reward_amount'] ) : $this->defaults['reward_amount'];
+        $levels            = isset( $input['allowed_levels'] ) ? $this->sanitize_allowed_levels( $input['allowed_levels'] ) : $this->defaults['allowed_levels'];
+        $message           = isset( $input['notice_message'] ) ? $this->sanitize_notice_message( $input['notice_message'] ) : $this->defaults['notice_message'];
+        $secret            = isset( $input['stripe_secret_key'] ) ? $this->sanitize_stripe_secret( $input['stripe_secret_key'] ) : null;
+        $tremendous_secret = isset( $input['tremendous_secret_key'] ) ? $this->sanitize_tremendous_secret( $input['tremendous_secret_key'] ) : null;
+        $threshold         = isset( $input['balance_alert_threshold'] ) ? $this->sanitize_amount( $input['balance_alert_threshold'] ) : $this->defaults['balance_alert_threshold'];
+        $campaign          = isset( $input['tremendous_campaign_id'] ) ? $this->sanitize_tremendous_campaign_id( $input['tremendous_campaign_id'] ) : $this->defaults['tremendous_campaign_id'];
+        $environment       = isset( $input['tremendous_environment'] ) ? $this->sanitize_tremendous_environment( $input['tremendous_environment'] ) : $this->defaults['tremendous_environment'];
 
         $sanitized['discount_amount'] = $discount;
         $sanitized['reward_amount']   = $reward;
@@ -203,14 +255,15 @@ class Ecosplay_Referrals_Admin_Settings {
         $sanitized['notice_message']  = $message;
         $sanitized['balance_alert_threshold'] = $threshold;
         $sanitized['stripe_enabled']          = ! empty( $input['stripe_enabled'] );
+        $sanitized['tremendous_enabled']      = ! empty( $input['tremendous_enabled'] );
+        $sanitized['tremendous_campaign_id']  = $campaign;
+        $sanitized['tremendous_environment']  = $environment;
 
         if ( null !== $secret ) {
             $sanitized['stripe_secret_key'] = $secret['cipher'];
             $sanitized['stripe_secret_exists'] = $secret['exists'];
         } else {
-            $stored = get_option( $this->option_name, array() );
-
-            if ( is_array( $stored ) && array_key_exists( 'stripe_secret_key', $stored ) ) {
+            if ( array_key_exists( 'stripe_secret_key', $stored ) ) {
                 $sanitized['stripe_secret_key']    = (string) $stored['stripe_secret_key'];
                 $sanitized['stripe_secret_exists'] = ! empty( $stored['stripe_secret_key'] );
             }
@@ -218,6 +271,20 @@ class Ecosplay_Referrals_Admin_Settings {
 
         if ( ! isset( $sanitized['stripe_secret_exists'] ) ) {
             $sanitized['stripe_secret_exists'] = false;
+        }
+
+        if ( null !== $tremendous_secret ) {
+            $sanitized['tremendous_secret_key']    = $tremendous_secret['cipher'];
+            $sanitized['tremendous_secret_exists'] = $tremendous_secret['exists'];
+        } else {
+            if ( array_key_exists( 'tremendous_secret_key', $stored ) ) {
+                $sanitized['tremendous_secret_key']    = (string) $stored['tremendous_secret_key'];
+                $sanitized['tremendous_secret_exists'] = ! empty( $stored['tremendous_secret_key'] );
+            }
+        }
+
+        if ( ! isset( $sanitized['tremendous_secret_exists'] ) ) {
+            $sanitized['tremendous_secret_exists'] = false;
         }
 
         add_settings_error( 'ecosplay_referrals', 'settings_saved', __( 'Réglages enregistrés.', 'ecosplay-referrals' ), 'updated' );
@@ -423,6 +490,7 @@ class Ecosplay_Referrals_Admin_Settings {
         $merged = array_merge( $this->defaults, $stored );
 
         $merged['stripe_enabled'] = ! empty( $merged['stripe_enabled'] );
+        $merged['tremendous_enabled'] = ! empty( $merged['tremendous_enabled'] );
 
         if ( ! empty( $merged['stripe_secret_key'] ) ) {
             $merged['stripe_secret_exists'] = true;
@@ -431,6 +499,20 @@ class Ecosplay_Referrals_Admin_Settings {
             $merged['stripe_secret_exists'] = false;
             $merged['stripe_secret_key']    = '';
         }
+
+        if ( ! empty( $merged['tremendous_secret_key'] ) ) {
+            $merged['tremendous_secret_exists'] = true;
+            $merged['tremendous_secret_key']    = '';
+        } else {
+            $merged['tremendous_secret_exists'] = false;
+            $merged['tremendous_secret_key']    = '';
+        }
+
+        if ( ! in_array( $merged['tremendous_environment'], array( 'production', 'sandbox' ), true ) ) {
+            $merged['tremendous_environment'] = $this->defaults['tremendous_environment'];
+        }
+
+        $merged['tremendous_campaign_id'] = is_string( $merged['tremendous_campaign_id'] ) ? $merged['tremendous_campaign_id'] : '';
 
         return $merged;
     }
@@ -559,6 +641,76 @@ class Ecosplay_Referrals_Admin_Settings {
     }
 
     /**
+     * Encrypts the Tremendous secret value while preserving existing storage.
+     *
+     * @param string $value Raw secret submitted.
+     *
+     * @return array{cipher:string,exists:bool}|null
+     */
+    protected function sanitize_tremendous_secret( $value ) {
+        $submitted = trim( (string) $value );
+
+        if ( '' === $submitted ) {
+            $stored = get_option( $this->option_name, array() );
+
+            if ( is_array( $stored ) && ! empty( $stored['tremendous_secret_key'] ) ) {
+                return array(
+                    'cipher' => (string) $stored['tremendous_secret_key'],
+                    'exists' => true,
+                );
+            }
+
+            return array(
+                'cipher' => '',
+                'exists' => false,
+            );
+        }
+
+        $cipher = Ecosplay_Referrals_Tremendous_Secrets::encrypt( $submitted );
+
+        if ( '' === $cipher ) {
+            add_settings_error( 'ecosplay_referrals', 'tremendous_secret_error', __( 'La clé Tremendous n’a pas pu être chiffrée.', 'ecosplay-referrals' ), 'error' );
+
+            return null;
+        }
+
+        return array(
+            'cipher' => $cipher,
+            'exists' => true,
+        );
+    }
+
+    /**
+     * Normalizes the Tremendous campaign identifier input.
+     *
+     * @param mixed $value Raw input value.
+     *
+     * @return string
+     */
+    protected function sanitize_tremendous_campaign_id( $value ) {
+        $campaign = sanitize_text_field( (string) $value );
+
+        return substr( $campaign, 0, 100 );
+    }
+
+    /**
+     * Normalizes the Tremendous environment selector.
+     *
+     * @param mixed $value Raw input value.
+     *
+     * @return string
+     */
+    protected function sanitize_tremendous_environment( $value ) {
+        $environment = strtolower( (string) $value );
+
+        if ( ! in_array( $environment, array( 'production', 'sandbox' ), true ) ) {
+            return $this->defaults['tremendous_environment'];
+        }
+
+        return $environment;
+    }
+
+    /**
      * Outputs the Stripe secret input while keeping it masked.
      *
      * @return void
@@ -577,6 +729,90 @@ class Ecosplay_Referrals_Admin_Settings {
         } else {
             echo '<p class="description">' . esc_html__( 'Saisissez la clé secrète Stripe à chiffrer et stocker.', 'ecosplay-referrals' ) . '</p>';
         }
+    }
+
+    /**
+     * Displays the Tremendous enable toggle checkbox.
+     *
+     * @return void
+     */
+    public function render_tremendous_enabled_field() {
+        $options = $this->get_options();
+        $checked = ! empty( $options['tremendous_enabled'] );
+
+        printf(
+            '<label><input type="checkbox" name="%1$s[tremendous_enabled]" value="1" %2$s /> %3$s</label>',
+            esc_attr( $this->option_name ),
+            checked( $checked, true, false ),
+            esc_html__( 'Activer l’intégration Tremendous', 'ecosplay-referrals' )
+        );
+    }
+
+    /**
+     * Outputs the Tremendous secret input while keeping it masked.
+     *
+     * @return void
+     */
+    public function render_tremendous_secret_field() {
+        $options      = $this->get_options();
+        $has_existing = ! empty( $options['tremendous_secret_exists'] );
+
+        printf(
+            '<input type="password" class="regular-text" name="%1$s[tremendous_secret_key]" value="" autocomplete="off" placeholder="trm_live_********" />',
+            esc_attr( $this->option_name )
+        );
+
+        if ( $has_existing ) {
+            echo '<p class="description">' . esc_html__( 'Une clé Tremendous est enregistrée. Laissez vide pour la conserver.', 'ecosplay-referrals' ) . '</p>';
+        } else {
+            echo '<p class="description">' . esc_html__( 'Saisissez la clé API Tremendous à chiffrer et stocker.', 'ecosplay-referrals' ) . '</p>';
+        }
+    }
+
+    /**
+     * Displays the Tremendous campaign identifier field.
+     *
+     * @return void
+     */
+    public function render_tremendous_campaign_field() {
+        $options  = $this->get_options();
+        $campaign = isset( $options['tremendous_campaign_id'] ) ? (string) $options['tremendous_campaign_id'] : $this->defaults['tremendous_campaign_id'];
+
+        printf(
+            '<input type="text" class="regular-text" name="%1$s[tremendous_campaign_id]" value="%2$s" placeholder="camp_********" />',
+            esc_attr( $this->option_name ),
+            esc_attr( $campaign )
+        );
+
+        echo '<p class="description">' . esc_html__( 'Identifiant de campagne transmis aux récompenses Tremendous.', 'ecosplay-referrals' ) . '</p>';
+    }
+
+    /**
+     * Displays the Tremendous environment selector.
+     *
+     * @return void
+     */
+    public function render_tremendous_environment_field() {
+        $options     = $this->get_options();
+        $environment = isset( $options['tremendous_environment'] ) ? (string) $options['tremendous_environment'] : $this->defaults['tremendous_environment'];
+        $choices     = array(
+            'production' => __( 'Production', 'ecosplay-referrals' ),
+            'sandbox'    => __( 'Sandbox', 'ecosplay-referrals' ),
+        );
+
+        printf( '<select name="%1$s[tremendous_environment]">', esc_attr( $this->option_name ) );
+
+        foreach ( $choices as $value => $label ) {
+            printf(
+                '<option value="%1$s" %2$s>%3$s</option>',
+                esc_attr( $value ),
+                selected( $environment, $value, false ),
+                esc_html( $label )
+            );
+        }
+
+        echo '</select>';
+        echo '<p class="description">' . esc_html__( 'Choisissez l’environnement Tremendous ciblé.', 'ecosplay-referrals' ) . '</p>';
     }
 
     /**

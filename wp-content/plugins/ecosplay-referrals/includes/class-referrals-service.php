@@ -42,14 +42,38 @@ class Ecosplay_Referrals_Service {
     protected $stripe_client;
 
     /**
+     * Tremendous API client helper.
+     *
+     * @var Ecosplay_Referrals_Tremendous_Client|null
+     */
+    protected $tremendous_client;
+
+    /**
+     * Feature toggle collection passed at construction time.
+     *
+     * @var array<string,mixed>
+     */
+    protected $feature_flags = array();
+
+    /**
      * Wires hooks and stores dependencies.
      *
-     * @param Ecosplay_Referrals_Store         $store         Persistence facade.
-     * @param Ecosplay_Referrals_Stripe_Client $stripe_client Stripe HTTP client.
+     * @param Ecosplay_Referrals_Store              $store              Persistence facade.
+     * @param Ecosplay_Referrals_Stripe_Client      $stripe_client      Stripe HTTP client.
+     * @param Ecosplay_Referrals_Tremendous_Client|null $tremendous_client Tremendous HTTP client.
+     * @param array<string,mixed>                    $feature_flags      Feature toggles.
      */
-    public function __construct( Ecosplay_Referrals_Store $store, Ecosplay_Referrals_Stripe_Client $stripe_client ) {
-        $this->store         = $store;
-        $this->stripe_client = $stripe_client;
+    public function __construct( Ecosplay_Referrals_Store $store, Ecosplay_Referrals_Stripe_Client $stripe_client, $tremendous_client = null, array $feature_flags = array() ) {
+        $this->store             = $store;
+        $this->stripe_client     = $stripe_client;
+        $this->tremendous_client = $tremendous_client instanceof Ecosplay_Referrals_Tremendous_Client ? $tremendous_client : null;
+        $this->feature_flags     = array_merge(
+            array(
+                'stripe_enabled'     => null,
+                'tremendous_enabled' => null,
+            ),
+            $feature_flags
+        );
 
         add_action( 'pmpro_after_change_membership_level', array( $this, 'handle_membership_update' ), 10, 3 );
         add_action( 'pmpro_checkout_boxes', array( $this, 'render_checkout_field' ) );
@@ -68,9 +92,28 @@ class Ecosplay_Referrals_Service {
      * @return bool
      */
     public function is_stripe_enabled() {
-        $enabled = function_exists( 'ecosplay_referrals_is_stripe_enabled' ) ? ecosplay_referrals_is_stripe_enabled() : false;
+        if ( array_key_exists( 'stripe_enabled', $this->feature_flags ) && null !== $this->feature_flags['stripe_enabled'] ) {
+            $enabled = (bool) $this->feature_flags['stripe_enabled'];
+        } else {
+            $enabled = function_exists( 'ecosplay_referrals_is_stripe_enabled' ) ? ecosplay_referrals_is_stripe_enabled() : false;
+        }
 
         return (bool) apply_filters( 'ecosplay_referrals_service_is_stripe_enabled', $enabled, $this );
+    }
+
+    /**
+     * Indicates whether Tremendous-specific features should be executed.
+     *
+     * @return bool
+     */
+    public function is_tremendous_enabled() {
+        if ( array_key_exists( 'tremendous_enabled', $this->feature_flags ) && null !== $this->feature_flags['tremendous_enabled'] ) {
+            $enabled = (bool) $this->feature_flags['tremendous_enabled'];
+        } else {
+            $enabled = function_exists( 'ecosplay_referrals_is_tremendous_enabled' ) ? ecosplay_referrals_is_tremendous_enabled() : false;
+        }
+
+        return (bool) apply_filters( 'ecosplay_referrals_service_is_tremendous_enabled', $enabled, $this );
     }
 
     /**
