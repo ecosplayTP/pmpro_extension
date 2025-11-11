@@ -25,6 +25,7 @@ class Ecosplay_Referrals_Service {
     const DEFAULT_ALLOWED_LEVELS = array( 'pmpro_role_2' );
     const DEFAULT_NOTICE_MESSAGE = 'Parrainez vos amis pour cumuler des récompenses ECOSplay.';
     const NOTICE_VERSION_OPTION  = 'ecosplay_referrals_notice_version';
+    const STRIPE_DISABLED_ERROR  = 'ecosplay_referrals_stripe_disabled';
 
     /**
      * Storage layer implementation.
@@ -59,6 +60,17 @@ class Ecosplay_Referrals_Service {
         add_action( 'ecosplay_referrals_request_payout', array( $this, 'handle_withdraw_request' ), 10, 4 );
         add_action( 'ecosplay_referrals_admin_batch_payout', array( $this, 'handle_batch_payout' ), 10, 4 );
         add_action( 'ecosplay_referrals_daily_balance_check', array( $this, 'run_daily_balance_check' ) );
+    }
+
+    /**
+     * Indicates whether Stripe-specific features should be executed.
+     *
+     * @return bool
+     */
+    public function is_stripe_enabled() {
+        $enabled = function_exists( 'ecosplay_referrals_is_stripe_enabled' ) ? ecosplay_referrals_is_stripe_enabled() : false;
+
+        return (bool) apply_filters( 'ecosplay_referrals_service_is_stripe_enabled', $enabled, $this );
     }
 
     /**
@@ -110,6 +122,10 @@ class Ecosplay_Referrals_Service {
      */
     public function ensure_stripe_account( $user_id ) {
         $user_id = (int) $user_id;
+
+        if ( ! $this->is_stripe_enabled() ) {
+            return $this->stripe_disabled_error();
+        }
 
         if ( $user_id <= 0 ) {
             return new WP_Error( 'ecosplay_referrals_invalid_user', __( 'Utilisateur invalide pour Stripe.', 'ecosplay-referrals' ) );
@@ -237,6 +253,10 @@ class Ecosplay_Referrals_Service {
      * @return array<string,mixed>|WP_Error
      */
     public function generate_login_link( $user_id ) {
+        if ( ! $this->is_stripe_enabled() ) {
+            return $this->stripe_disabled_error();
+        }
+
         $referral = $this->store->get_referral_by_user( (int) $user_id );
 
         if ( ! $referral || empty( $referral->stripe_account_id ) ) {
@@ -266,6 +286,10 @@ class Ecosplay_Referrals_Service {
         $user_id  = (int) $user_id;
         $amount   = (float) $amount;
         $currency = strtolower( (string) $currency );
+
+        if ( ! $this->is_stripe_enabled() ) {
+            return $this->stripe_disabled_error();
+        }
 
         if ( $user_id <= 0 ) {
             return new WP_Error( 'ecosplay_referrals_invalid_user', __( 'Utilisateur invalide pour le transfert Stripe.', 'ecosplay-referrals' ) );
@@ -418,6 +442,13 @@ class Ecosplay_Referrals_Service {
             return $result;
         }
 
+        if ( ! $this->is_stripe_enabled() ) {
+            $result['ok']    = false;
+            $result['error'] = $this->stripe_disabled_error();
+
+            return $result;
+        }
+
         if ( ! $this->stripe_client->is_configured() ) {
             $error             = new WP_Error( 'ecosplay_referrals_stripe_missing_secret', __( 'Configurez la clé Stripe avant de poursuivre.', 'ecosplay-referrals' ) );
             $result['ok']      = false;
@@ -534,6 +565,10 @@ class Ecosplay_Referrals_Service {
 
         if ( '' === $transfer_id ) {
             return new WP_Error( 'ecosplay_referrals_missing_transfer', __( 'Transfert introuvable.', 'ecosplay-referrals' ) );
+        }
+
+        if ( ! $this->is_stripe_enabled() ) {
+            return $this->stripe_disabled_error();
         }
 
         if ( ! $this->stripe_client->is_configured() ) {
@@ -701,19 +736,21 @@ class Ecosplay_Referrals_Service {
         $reward_amount   = $this->get_reward_amount();
         $currency        = self::DEFAULT_CURRENCY;
 
-        $balance_status = $this->check_platform_balance( $reward_amount, $currency );
+        if ( $this->is_stripe_enabled() ) {
+            $balance_status = $this->check_platform_balance( $reward_amount, $currency );
 
-        if ( ! $balance_status['ok'] ) {
-            $this->handle_balance_alert(
-                'reward',
-                $balance_status,
-                array(
-                    'user_id'     => (int) $referral->user_id,
-                    'referral_id' => (int) $referral->id,
-                    'order_id'    => $order_id,
-                    'code'        => $code,
-                )
-            );
+            if ( ! $balance_status['ok'] ) {
+                $this->handle_balance_alert(
+                    'reward',
+                    $balance_status,
+                    array(
+                        'user_id'     => (int) $referral->user_id,
+                        'referral_id' => (int) $referral->id,
+                        'order_id'    => $order_id,
+                        'code'        => $code,
+                    )
+                );
+            }
         }
 
         $this->store->log_code_use(
@@ -843,6 +880,10 @@ class Ecosplay_Referrals_Service {
      * @return void
      */
     public function run_daily_balance_check() {
+        if ( ! $this->is_stripe_enabled() ) {
+            return;
+        }
+
         $threshold = $this->get_balance_alert_threshold();
 
         if ( $threshold <= 0 ) {
@@ -1067,6 +1108,10 @@ class Ecosplay_Referrals_Service {
             return new WP_Error( 'ecosplay_referrals_wallet_forbidden', __( 'Accès refusé au portefeuille.', 'ecosplay-referrals' ) );
         }
 
+        if ( ! $this->is_stripe_enabled() ) {
+            return $this->stripe_disabled_error();
+        }
+
         $referral = $this->store->get_referral_by_user( $user_id );
 
         if ( ! $referral ) {
@@ -1144,6 +1189,15 @@ class Ecosplay_Referrals_Service {
         $decoded = json_decode( (string) $value, true );
 
         return is_array( $decoded ) ? $decoded : array();
+    }
+
+    /**
+     * Builds a standardized error when Stripe has been disabled.
+     *
+     * @return WP_Error
+     */
+    protected function stripe_disabled_error() {
+        return new WP_Error( self::STRIPE_DISABLED_ERROR, __( 'L’intégration Stripe est désactivée.', 'ecosplay-referrals' ) );
     }
 
     /**
@@ -1549,6 +1603,10 @@ class Ecosplay_Referrals_Service {
      * @return void
      */
     protected function handle_balance_alert( $source, array $status, array $context = array() ) {
+        if ( isset( $status['error'] ) && $status['error'] instanceof WP_Error && self::STRIPE_DISABLED_ERROR === $status['error']->get_error_code() ) {
+            return;
+        }
+
         $available = isset( $status['available'] ) ? (float) $status['available'] : 0.0;
         $required  = isset( $status['required'] ) ? (float) $status['required'] : 0.0;
         $currency  = isset( $status['currency'] ) ? strtoupper( (string) $status['currency'] ) : strtoupper( self::DEFAULT_CURRENCY );
