@@ -19,7 +19,7 @@ Les sections suivantes détaillent l'ensemble des actions disponibles pour l'adm
 
 ### Accès au menu Parrainages
 
-Après activation du plugin, un sous-menu **Parrainages** apparaît dans le menu Paid Memberships Pro (`Adhésions`). Ce sous-menu regroupe quatre onglets : **Codes actifs**, **Historique**, **Statistiques** et **Réglages**. Chaque onglet correspond à un contrôleur dédié et charge les styles/scripts d'administration fournis par le plugin.【F:wp-content/plugins/ecosplay-referrals/admin/class-admin-menu.php†L49-L134】
+Après activation du plugin, un sous-menu **Parrainages** apparaît dans le menu Paid Memberships Pro (`Adhésions`). Ce sous-menu propose par défaut les onglets **Codes actifs**, **Historique**, **Statistiques** et **Réglages**, puis ajoute **Paiements** et/ou **Logs** supplémentaires dès que Stripe ou Tremendous sont activés. Chaque onglet correspond à un contrôleur dédié et charge les styles/scripts d'administration fournis par le plugin.【F:wp-content/plugins/ecosplay-referrals/admin/class-admin-menu.php†L49-L216】
 
 ### Gestion des codes (onglet « Codes actifs »)
 
@@ -47,6 +47,20 @@ Après activation du plugin, un sous-menu **Parrainages** apparaît dans le menu
 * **Message de notification** : personnalisez le texte affiché dans la notification flottante. Ce message est affiché sur le front-end et peut inclure plusieurs lignes (les retours à la ligne sont convertis automatiquement).【F:wp-content/plugins/ecosplay-referrals/admin/class-admin-settings.php†L83-L142】【F:wp-content/plugins/ecosplay-referrals/public/class-floating-notice.php†L61-L103】
 * **Sauvegarde** : cliquez sur « Enregistrer les modifications » pour valider. Un message de confirmation est ajouté via les `settings_errors`. Les valeurs sont validées (montants numériques >= 0, niveaux nettoyés) avant enregistrement.【F:wp-content/plugins/ecosplay-referrals/admin/class-admin-settings.php†L115-L178】
 
+### Intégration Stripe (réglages, onglets « Paiements » et « Logs Stripe »)
+
+* **Activation & clés** : cochez « Activer l’intégration Stripe », renseignez la clé secrète Connect et le seuil d’alerte de trésorerie. Les secrets sont chiffrés avant stockage et le seuil permet d’afficher des avertissements lors des transferts.【F:wp-content/plugins/ecosplay-referrals/admin/class-admin-settings.php†L156-L260】
+* **Accès aux onglets** : une fois Stripe actif, deux onglets supplémentaires apparaissent : **Paiements** (pilotage des virements) et **Logs Stripe** (journal des webhooks). Ils sont masqués automatiquement quand l’intégration est coupée.【F:wp-content/plugins/ecosplay-referrals/admin/class-admin-menu.php†L188-L216】
+* **Gestion des comptes et virements** : l’onglet **Paiements** liste chaque parrain avec son compte Connect, les montants gagnés/versés et les actions clés : renvoi de lien d’onboarding, accès au dashboard Express, création de transfert (Stripe `POST /v1/transfers`), marquage manuel et annulation de transferts en attente. Chaque action est protégée par un nonce et délègue la logique au service Stripe.【F:wp-content/plugins/ecosplay-referrals/admin/views/payouts.php†L14-L123】【F:wp-content/plugins/ecosplay-referrals/admin/class-admin-payouts-page.php†L66-L201】【F:wp-content/plugins/ecosplay-referrals/includes/class-referrals-service.php†L161-L420】
+* **Suivi des incidents** : l’onglet **Logs Stripe** consomme l’historique des webhooks (ex. `account.updated`, `transfer.*`, `payout.*`) pour diagnostiquer les blocages KYC ou erreurs de virement. Des filtres par type/date sont disponibles depuis la barre d’outils.【F:wp-content/plugins/ecosplay-referrals/admin/class-admin-stripe-logs-page.php†L63-L109】
+* **Bonnes pratiques Stripe** : vérifiez régulièrement la balance plateforme (`GET /v1/balance`), programmez des top-ups si nécessaire et proposez des login links pour laisser les parrains mettre à jour leurs informations Express.【F:Stripe_documentation.txt†L1-L110】
+
+### Intégration Tremendous (réglages, onglet « Logs Tremendous »)
+
+* **Activation & campagne** : activez Tremendous, saisissez la clé API (préfixe `TEST_` en sandbox ou `PROD_` en production), l’identifiant de campagne et l’environnement ciblé. Le client considère les deux environnements officiels et vérifie qu’une campagne est définie avant de répondre aux requêtes.【F:wp-content/plugins/ecosplay-referrals/admin/class-admin-settings.php†L187-L260】【F:wp-content/plugins/ecosplay-referrals/includes/class-tremendous-client.php†L39-L149】【F:tremendous_documentation.txt†L1-L60】
+* **Surveillance du solde** : le client expose une récupération du `funding_source` pour suivre le disponible Tremendous et afficher des alertes dans l’interface membre lorsque le solde devient insuffisant.【F:wp-content/plugins/ecosplay-referrals/includes/class-tremendous-client.php†L181-L220】【F:tremendous_documentation.txt†L61-L134】
+* **Journal des webhooks** : l’onglet **Logs Tremendous** centralise les événements `CONNECTED_ORGANIZATIONS.*`, `ORDERS.*` et `TOPUPS.*`, avec des notes explicatives pour aider l’équipe support à débloquer les cas (validation, refus, rechargement). Des filtres par type, période et statut sont disponibles.【F:wp-content/plugins/ecosplay-referrals/admin/class-admin-tremendous-logs-page.php†L80-L161】
+
 ### Notification flottante
 
 * **Activation** : la bannière s'affiche tant qu'elle n'a pas été masquée par l'utilisateur ou qu'un administrateur a réinitialisé les indicateurs côté admin. Elle respecte un filtre (`ecosplay_referrals_should_display_notice`) pour ajuster dynamiquement l'affichage.【F:wp-content/plugins/ecosplay-referrals/public/class-floating-notice.php†L20-L110】
@@ -71,6 +85,13 @@ Seuls les membres appartenant aux niveaux déclarés comme « autorisés » dans
 
 * **Shortcode points** : insérez `[ecos_referral_points decimals="2"]` pour montrer le cumul de récompenses, formaté selon la locale et le nombre de décimales désiré (0 par défaut).【F:wp-content/plugins/ecosplay-referrals/includes/class-referrals-shortcodes.php†L28-L59】
 * **Mise à jour en temps réel** : chaque inscription validée via un code crédite automatiquement le compte du parrain avec le montant défini par l'administrateur.【F:wp-content/plugins/ecosplay-referrals/includes/class-referrals-service.php†L206-L247】
+
+### Portefeuille de récompenses (shortcode `[ecos_referral_wallet]`)
+
+* **Accès** : ajoutez le shortcode sur l’espace membre pour proposer un tableau de bord des gains. Sans connexion ou abonnement éligible, un message explicite est affiché et aucune donnée n’est révélée.【F:wp-content/plugins/ecosplay-referrals/public/class-member-wallet.php†L32-L121】【F:wp-content/plugins/ecosplay-referrals/includes/class-referrals-service.php†L1240-L1301】
+* **Association Tremendous** : si l’intégration est active, le membre voit son statut KYC (en attente, validé, blocage) ainsi que le solde disponible côté Tremendous. Les boutons « Associer » et « Rafraîchir » déclenchent des requêtes AJAX sécurisées pour créer ou synchroniser l’organisation connectée via l’API Tremendous.【F:wp-content/plugins/ecosplay-referrals/public/class-member-wallet.php†L96-L199】【F:wp-content/plugins/ecosplay-referrals/includes/class-referrals-service.php†L1304-L1415】【F:wp-content/plugins/ecosplay-referrals/includes/class-tremendous-client.php†L152-L220】
+* **Demande de récompense** : le formulaire intégré valide le montant demandé, vérifie les soldes local/Tremendous et crée une commande (`orders.create`) avec les métadonnées utiles. Un message de confirmation ou d’erreur s’affiche immédiatement grâce aux réponses JSON.【F:wp-content/plugins/ecosplay-referrals/public/class-member-wallet.php†L115-L151】【F:wp-content/plugins/ecosplay-referrals/includes/class-referrals-service.php†L1418-L1519】【F:tremendous_documentation.txt†L1-L60】
+* **Historique & statut** : le bloc « Historique des virements » liste les transferts Stripe ou demandes Tremendous avec date, montant, statut (en cours/réussi/échoué) et éventuel message d’échec. Les lignes reflètent les retours des API et des webhooks enregistrés par le service.【F:wp-content/plugins/ecosplay-referrals/public/class-member-wallet.php†L124-L151】【F:wp-content/plugins/ecosplay-referrals/includes/class-referrals-service.php†L320-L420】【F:wp-content/plugins/ecosplay-referrals/includes/class-referrals-service.php†L1514-L1528】
 
 ### Utilisation du code lors d'une inscription
 
