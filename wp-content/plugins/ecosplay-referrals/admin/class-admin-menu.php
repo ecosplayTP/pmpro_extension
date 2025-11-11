@@ -186,12 +186,12 @@ class Ecosplay_Referrals_Admin_Menu {
     }
 
     /**
-     * Provides the tab navigation labels.
+     * Provides the tab navigation labels while hiding Stripe tabs when disabled.
      *
      * @return array<string,string>
      */
     protected function get_tabs() {
-        return array(
+        $tabs = array(
             'codes'    => __( 'Codes actifs', 'ecosplay-referrals' ),
             'usage'    => __( 'Historique', 'ecosplay-referrals' ),
             'stats'    => __( 'Statistiques', 'ecosplay-referrals' ),
@@ -199,10 +199,16 @@ class Ecosplay_Referrals_Admin_Menu {
             'logs'     => __( 'Logs Stripe', 'ecosplay-referrals' ),
             'settings' => __( 'Réglages', 'ecosplay-referrals' ),
         );
+
+        if ( ! ecosplay_referrals_is_stripe_enabled() ) {
+            unset( $tabs['payouts'], $tabs['logs'] );
+        }
+
+        return $tabs;
     }
 
     /**
-     * Returns or instantiates the controller for a tab.
+     * Returns or instantiates the controller for a tab while guarding Stripe dependencies.
      *
      * @param string $slug Tab identifier.
      *
@@ -227,10 +233,14 @@ class Ecosplay_Referrals_Admin_Menu {
                 $controller = new Ecosplay_Referrals_Admin_Stats_Page( $this->service );
                 break;
             case 'payouts':
-                $controller = new Ecosplay_Referrals_Admin_Payouts_Page( $this->service );
+                $controller = ecosplay_referrals_is_stripe_enabled()
+                    ? new Ecosplay_Referrals_Admin_Payouts_Page( $this->service )
+                    : new Ecosplay_Referrals_Admin_Codes_Page( $this->service );
                 break;
             case 'logs':
-                $controller = new Ecosplay_Referrals_Admin_Stripe_Logs_Page( $this->service );
+                $controller = ecosplay_referrals_is_stripe_enabled()
+                    ? new Ecosplay_Referrals_Admin_Stripe_Logs_Page( $this->service )
+                    : new Ecosplay_Referrals_Admin_Codes_Page( $this->service );
                 break;
             case 'settings':
                 $controller = $this->settings;
