@@ -99,9 +99,29 @@ function ecosplay_referrals_service() {
         require_once ECOSPLAY_REFERRALS_INC . 'class-referrals-service.php';
         require_once ECOSPLAY_REFERRALS_INC . 'class-stripe-client.php';
         require_once ECOSPLAY_REFERRALS_INC . 'class-stripe-secrets.php';
+        require_once ECOSPLAY_REFERRALS_INC . 'class-tremendous-client.php';
+        require_once ECOSPLAY_REFERRALS_INC . 'class-tremendous-secrets.php';
+
+        $options = get_option( 'ecosplay_referrals_options', array() );
 
         $stripe_client = new Ecosplay_Referrals_Stripe_Client( ecosplay_referrals_get_stripe_secret() );
-        $service       = new Ecosplay_Referrals_Service( ecosplay_referrals_store(), $stripe_client );
+        $tremendous_client = new Ecosplay_Referrals_Tremendous_Client(
+            ecosplay_referrals_get_tremendous_secret(),
+            array(
+                'environment' => isset( $options['tremendous_environment'] ) ? (string) $options['tremendous_environment'] : 'production',
+                'campaign_id' => isset( $options['tremendous_campaign_id'] ) ? (string) $options['tremendous_campaign_id'] : '',
+            )
+        );
+
+        $service = new Ecosplay_Referrals_Service(
+            ecosplay_referrals_store(),
+            $stripe_client,
+            $tremendous_client,
+            array(
+                'stripe_enabled'     => ecosplay_referrals_is_stripe_enabled(),
+                'tremendous_enabled' => ecosplay_referrals_is_tremendous_enabled(),
+            )
+        );
     }
 
     return $service;
@@ -124,6 +144,25 @@ function ecosplay_referrals_is_stripe_enabled() {
     $enabled = is_array( $options ) && ! empty( $options['stripe_enabled'] );
 
     return (bool) apply_filters( 'ecosplay_referrals_is_stripe_enabled', $enabled );
+}
+
+/**
+ * Indicates whether Tremendous features are enabled in the plugin settings.
+ *
+ * @return bool
+ */
+function ecosplay_referrals_is_tremendous_enabled() {
+    static $enabled = null;
+
+    if ( null !== $enabled ) {
+        return $enabled;
+    }
+
+    $options = get_option( 'ecosplay_referrals_options', array() );
+
+    $enabled = is_array( $options ) && ! empty( $options['tremendous_enabled'] );
+
+    return (bool) apply_filters( 'ecosplay_referrals_is_tremendous_enabled', $enabled );
 }
 
 /**
