@@ -336,6 +336,33 @@ class Ecosplay_Referrals_Store {
     }
 
     /**
+     * Récupère les événements de virements pour un membre.
+     *
+     * @param int $user_id Identifiant du membre.
+     * @param int $limit   Nombre maximal d\'entrées.
+     *
+     * @return array<int,object>
+     */
+    public function get_member_payouts( $user_id, $limit = 10 ) {
+        global $wpdb;
+
+        $user_id = (int) $user_id;
+        $limit   = max( 1, (int) $limit );
+
+        if ( $user_id <= 0 ) {
+            return array();
+        }
+
+        $query = $wpdb->prepare(
+            "SELECT id, amount, currency, status, failure_message, created_at FROM {$this->payouts_table()} WHERE user_id = %d ORDER BY created_at DESC LIMIT %d",
+            $user_id,
+            $limit
+        );
+
+        return $wpdb->get_results( $query );
+    }
+
+    /**
      * Summarises usage rows grouped by period.
      *
      * @param string $period Grouping period (month|week).

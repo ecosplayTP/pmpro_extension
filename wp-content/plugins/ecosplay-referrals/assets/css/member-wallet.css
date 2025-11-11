@@ -1,0 +1,142 @@
+/**
+ * Styles spécifiques au portefeuille membre.
+ *
+ * @file    wp-content/plugins/ecosplay-referrals/assets/css/member-wallet.css
+ */
+
+.ecos-referral-wallet {
+    border: 1px solid #d4d7dc;
+    border-radius: 8px;
+    padding: 24px;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(31, 35, 41, 0.08);
+    max-width: 720px;
+    margin: 24px auto;
+}
+
+.ecos-referral-wallet__summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.ecos-referral-wallet__metric {
+    background: #f6f7f9;
+    border-radius: 6px;
+    padding: 16px;
+}
+
+.ecos-referral-wallet__label {
+    display: block;
+    font-size: 13px;
+    text-transform: uppercase;
+    color: #6c7785;
+    margin-bottom: 6px;
+}
+
+.ecos-referral-wallet__value {
+    font-size: 20px;
+    font-weight: 600;
+    color: #1d2327;
+}
+
+.ecos-referral-wallet__kyc {
+    margin-bottom: 24px;
+}
+
+.ecos-referral-wallet__kyc-errors {
+    margin: 8px 0 0;
+    padding-left: 20px;
+    color: #b32d2e;
+}
+
+.ecos-referral-wallet__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.ecos-referral-wallet__actions button,
+.ecos-referral-wallet__actions .button {
+    background: #007cba;
+    border: none;
+    border-radius: 4px;
+    color: #fff;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 10px 16px;
+    text-decoration: none;
+}
+
+.ecos-referral-wallet__actions button[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.ecos-referral-wallet__notice {
+    margin-bottom: 16px;
+    padding: 12px 16px;
+    border-radius: 4px;
+    display: none;
+}
+
+.ecos-referral-wallet__notice--error {
+    background: #fdeaea;
+    color: #8a1f1f;
+    border: 1px solid #f5c2c7;
+}
+
+.ecos-referral-wallet__notice--success {
+    background: #edf9f0;
+    color: #1f6b3c;
+    border: 1px solid #b7ebcd;
+}
+
+.ecos-referral-wallet__transfer {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 320px;
+}
+
+.ecos-referral-wallet__transfer label {
+    font-weight: 600;
+}
+
+.ecos-referral-wallet__transfer input[type="number"] {
+    padding: 8px 10px;
+    border-radius: 4px;
+    border: 1px solid #c3c4c7;
+}
+
+.ecos-referral-wallet__hint {
+    font-size: 13px;
+    color: #50575e;
+    margin: 0;
+}
+
+.ecos-referral-wallet__ledger {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.ecos-referral-wallet__ledger th,
+.ecos-referral-wallet__ledger td {
+    border-bottom: 1px solid #e2e4e7;
+    padding: 10px;
+    text-align: left;
+}
+
+.ecos-referral-wallet__ledger-status--failed {
+    color: #b32d2e;
+}
+
+.ecos-referral-wallet__ledger-status--success {
+    color: #1f6b3c;
+}
+
+.ecos-referral-wallet__ledger-status--pending {
+    color: #6c7785;
+}
