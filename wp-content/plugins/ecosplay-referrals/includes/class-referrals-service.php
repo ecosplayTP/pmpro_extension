@@ -795,6 +795,69 @@ class Ecosplay_Referrals_Service {
     }
 
     /**
+     * Rassemble les informations de portefeuille pour un membre.
+     *
+     * @param int $user_id Identifiant du membre.
+     *
+     * @return array<string,mixed>|WP_Error
+     */
+    public function get_member_wallet( $user_id ) {
+        $user_id = (int) $user_id;
+
+        if ( $user_id <= 0 || ! $this->is_user_allowed( $user_id ) ) {
+            return new WP_Error( 'ecosplay_referrals_wallet_forbidden', __( 'Accès refusé au portefeuille.', 'ecosplay-referrals' ) );
+        }
+
+        $referral = $this->store->get_referral_by_user( $user_id );
+
+        if ( ! $referral ) {
+            return new WP_Error( 'ecosplay_referrals_wallet_missing', __( 'Profil de parrainage introuvable.', 'ecosplay-referrals' ) );
+        }
+
+        $capabilities = $this->decode_capabilities_field( isset( $referral->stripe_capabilities ) ? $referral->stripe_capabilities : '' );
+        $errors       = array();
+        $account      = null;
+
+        if ( ! empty( $referral->stripe_account_id ) ) {
+            if ( $this->stripe_client->is_configured() ) {
+                $account = $this->stripe_client->retrieve_account( $referral->stripe_account_id );
+
+                if ( is_wp_error( $account ) ) {
+                    $errors[] = $account->get_error_message();
+                } else {
+                    if ( isset( $account['capabilities'] ) && is_array( $account['capabilities'] ) ) {
+                        $capabilities = $account['capabilities'];
+                        $this->store->update_stripe_capabilities( (int) $referral->id, $capabilities );
+                    }
+
+                    $errors = array_merge( $errors, $this->extract_requirement_messages( $account ) );
+                }
+            } else {
+                $errors[] = __( 'La clé Stripe n\'est pas configurée.', 'ecosplay-referrals' );
+            }
+        }
+
+        $transfers_status = isset( $capabilities['transfers'] ) ? strtolower( (string) $capabilities['transfers'] ) : '';
+        $kyc              = $this->determine_kyc_state( $referral, $transfers_status, $account );
+
+        $currency = apply_filters( 'ecosplay_referrals_wallet_currency', 'EUR', $referral, $this );
+        $limit    = (int) apply_filters( 'ecosplay_referrals_wallet_payout_limit', 10, $referral, $this );
+
+        return array(
+            'earned_credits'    => isset( $referral->earned_credits ) ? (float) $referral->earned_credits : 0.0,
+            'total_paid'        => isset( $referral->total_paid ) ? (float) $referral->total_paid : 0.0,
+            'available_balance' => max( 0, (float) $referral->earned_credits - (float) $referral->total_paid ),
+            'currency'          => $currency,
+            'kyc_label'         => $kyc['label'],
+            'kyc_status'        => $kyc['status'],
+            'kyc_errors'        => $errors,
+            'can_transfer'      => ( 'active' === $kyc['status'] ),
+            'has_account'       => ! empty( $referral->stripe_account_id ),
+            'payouts'           => $this->store->get_member_payouts( $user_id, max( 1, $limit ) ),
+        );
+    }
+
+    /**
      * Normalises referral input to a comparable format.
      *
      * @param string $value Raw referral value.
@@ -805,6 +868,136 @@ class Ecosplay_Referrals_Service {
         $value = strtoupper( sanitize_text_field( (string) $value ) );
 
         return trim( $value );
+    }
+
+    /**
+     * Décodage sécurisé des capacités Stripe stockées.
+     *
+     * @param string $value Chaîne JSON potentielle.
+     *
+     * @return array<string,mixed>
+     */
+    protected function decode_capabilities_field( $value ) {
+        if ( empty( $value ) ) {
+            return array();
+        }
+
+        $decoded = json_decode( (string) $value, true );
+
+        return is_array( $decoded ) ? $decoded : array();
+    }
+
+    /**
+     * Génère des messages lisibles à partir des exigences Stripe.
+     *
+     * @param array<string,mixed> $account Données renvoyées par Stripe.
+     *
+     * @return array<int,string>
+     */
+    protected function extract_requirement_messages( $account ) {
+        if ( ! is_array( $account ) ) {
+            return array();
+        }
+
+        $messages     = array();
+        $requirements = isset( $account['requirements'] ) && is_array( $account['requirements'] ) ? $account['requirements'] : array();
+
+        if ( ! empty( $requirements['disabled_reason'] ) ) {
+            $messages[] = sprintf(
+                /* translators: %s: Stripe disabled reason. */
+                __( 'Stripe a désactivé les transferts : %s', 'ecosplay-referrals' ),
+                (string) $requirements['disabled_reason']
+            );
+        }
+
+        if ( ! empty( $requirements['errors'] ) && is_array( $requirements['errors'] ) ) {
+            foreach ( $requirements['errors'] as $error ) {
+                if ( ! is_array( $error ) ) {
+                    continue;
+                }
+
+                $reason      = isset( $error['reason'] ) ? $error['reason'] : '';
+                $requirement = isset( $error['requirement'] ) ? $error['requirement'] : '';
+
+                if ( '' === $reason && '' === $requirement ) {
+                    continue;
+                }
+
+                if ( '' === $reason ) {
+                    $messages[] = sprintf( __( 'Élément requis : %s', 'ecosplay-referrals' ), $requirement );
+                } elseif ( '' === $requirement ) {
+                    $messages[] = $reason;
+                } else {
+                    $messages[] = sprintf( '%s — %s', $requirement, $reason );
+                }
+            }
+        }
+
+        if ( empty( $messages ) && ! empty( $requirements['currently_due'] ) && is_array( $requirements['currently_due'] ) ) {
+            $messages[] = sprintf(
+                /* translators: %s: comma separated list of requirements. */
+                __( 'À compléter : %s', 'ecosplay-referrals' ),
+                implode( ', ', $requirements['currently_due'] )
+            );
+        }
+
+        return array_filter( array_map( 'trim', $messages ) );
+    }
+
+    /**
+     * Détermine le statut KYC humainement lisible.
+     *
+     * @param object             $referral         Enregistrement local du parrain.
+     * @param string             $transfers_status Statut brut des transferts Stripe.
+     * @param array<string,mixed>|null $account    Données Stripe détaillées.
+     *
+     * @return array{status:string,label:string}
+     */
+    protected function determine_kyc_state( $referral, $transfers_status, $account ) {
+        if ( empty( $referral->stripe_account_id ) ) {
+            return array(
+                'status' => 'missing',
+                'label'  => __( 'Compte Stripe à configurer.', 'ecosplay-referrals' ),
+            );
+        }
+
+        $status = strtolower( (string) $transfers_status );
+
+        if ( 'active' === $status ) {
+            return array(
+                'status' => 'active',
+                'label'  => __( 'Compte validé, transferts disponibles.', 'ecosplay-referrals' ),
+            );
+        }
+
+        if ( 'pending' === $status ) {
+            return array(
+                'status' => 'pending',
+                'label'  => __( 'Vérification Stripe en cours.', 'ecosplay-referrals' ),
+            );
+        }
+
+        $disabled_reason = '';
+
+        if ( is_array( $account ) && ! empty( $account['requirements']['disabled_reason'] ) ) {
+            $disabled_reason = (string) $account['requirements']['disabled_reason'];
+        }
+
+        if ( '' !== $disabled_reason ) {
+            return array(
+                'status' => 'disabled',
+                'label'  => sprintf(
+                    /* translators: %s: Stripe disabled reason. */
+                    __( 'Compte temporairement bloqué : %s', 'ecosplay-referrals' ),
+                    $disabled_reason
+                ),
+            );
+        }
+
+        return array(
+            'status' => 'inactive',
+            'label'  => __( 'Informations supplémentaires requises par Stripe.', 'ecosplay-referrals' ),
+        );
     }
 
     /**

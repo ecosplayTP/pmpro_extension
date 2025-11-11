@@ -151,9 +151,11 @@ function ecosplay_referrals_boot() {
 
     require_once ECOSPLAY_REFERRALS_PUBLIC . 'class-floating-notice.php';
     require_once ECOSPLAY_REFERRALS_INC . 'class-referrals-shortcodes.php';
+    require_once ECOSPLAY_REFERRALS_PUBLIC . 'class-member-wallet.php';
 
     new Ecosplay_Referrals_Floating_Notice( $service );
     new Ecosplay_Referrals_Shortcodes( $service );
+    new Ecosplay_Referrals_Member_Wallet( $service );
     new Ecosplay_Referrals_Stripe_Webhooks( ecosplay_referrals_store() );
 }
 
