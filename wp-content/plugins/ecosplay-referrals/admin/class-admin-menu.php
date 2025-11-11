@@ -192,17 +192,21 @@ class Ecosplay_Referrals_Admin_Menu {
      */
     protected function get_tabs() {
         $tabs = array(
-            'codes'    => __( 'Codes actifs', 'ecosplay-referrals' ),
-            'usage'    => __( 'Historique', 'ecosplay-referrals' ),
-            'stats'    => __( 'Statistiques', 'ecosplay-referrals' ),
-            'payouts'  => __( 'Paiements', 'ecosplay-referrals' ),
-            'logs'     => __( 'Logs Stripe', 'ecosplay-referrals' ),
-            'settings' => __( 'Réglages', 'ecosplay-referrals' ),
+            'codes' => __( 'Codes actifs', 'ecosplay-referrals' ),
+            'usage' => __( 'Historique', 'ecosplay-referrals' ),
+            'stats' => __( 'Statistiques', 'ecosplay-referrals' ),
         );
 
-        if ( ! ecosplay_referrals_is_stripe_enabled() ) {
-            unset( $tabs['payouts'], $tabs['logs'] );
+        if ( ecosplay_referrals_is_stripe_enabled() ) {
+            $tabs['payouts'] = __( 'Paiements', 'ecosplay-referrals' );
+            $tabs['logs']    = __( 'Logs Stripe', 'ecosplay-referrals' );
         }
+
+        if ( ecosplay_referrals_is_tremendous_enabled() ) {
+            $tabs['tremendous-logs'] = __( 'Logs Tremendous', 'ecosplay-referrals' );
+        }
+
+        $tabs['settings'] = __( 'Réglages', 'ecosplay-referrals' );
 
         return $tabs;
     }
@@ -240,6 +244,11 @@ class Ecosplay_Referrals_Admin_Menu {
             case 'logs':
                 $controller = ecosplay_referrals_is_stripe_enabled()
                     ? new Ecosplay_Referrals_Admin_Stripe_Logs_Page( $this->service )
+                    : new Ecosplay_Referrals_Admin_Codes_Page( $this->service );
+                break;
+            case 'tremendous-logs':
+                $controller = ecosplay_referrals_is_tremendous_enabled()
+                    ? new Ecosplay_Referrals_Admin_Tremendous_Logs_Page( $this->service )
                     : new Ecosplay_Referrals_Admin_Codes_Page( $this->service );
                 break;
             case 'settings':

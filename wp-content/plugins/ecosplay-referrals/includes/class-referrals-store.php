@@ -148,11 +148,14 @@ class Ecosplay_Referrals_Store {
 
         $sql_webhooks = "CREATE TABLE {$this->webhooks_table()} (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            provider VARCHAR(32) NOT NULL DEFAULT 'stripe',
             event_type VARCHAR(191) NOT NULL,
             status VARCHAR(32) NOT NULL,
+            resource_state VARCHAR(64) NULL,
             payload LONGTEXT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
+            KEY provider (provider),
             KEY event_type (event_type),
             KEY created_at (created_at)
         ) $charset;";
@@ -186,6 +189,9 @@ class Ecosplay_Referrals_Store {
         $this->maybe_add_referral_column( 'tremendous_status', 'VARCHAR(32) NULL' );
         $this->maybe_add_referral_column( 'tremendous_status_message', 'VARCHAR(255) NULL' );
         $this->maybe_add_referral_column( 'tremendous_balance', 'DECIMAL(10,2) NULL' );
+        $this->maybe_add_webhook_column( 'provider', "VARCHAR(32) NOT NULL DEFAULT 'stripe'" );
+        $this->maybe_add_webhook_column( 'resource_state', 'VARCHAR(64) NULL' );
+        $this->backfill_webhook_provider();
     }
 
     /**
@@ -213,6 +219,53 @@ class Ecosplay_Referrals_Store {
         }
 
         $wpdb->query( "ALTER TABLE `{$table}` ADD COLUMN `{$column}` {$definition}" );
+    }
+
+    /**
+     * Ensures webhook table columns exist without re-running full migrations.
+     *
+     * @param string $column     Column name to check.
+     * @param string $definition SQL fragment for column definition.
+     *
+     * @return void
+     */
+    protected function maybe_add_webhook_column( $column, $definition ) {
+        global $wpdb;
+
+        $table  = esc_sql( $this->webhooks_table() );
+        $column = sanitize_key( $column );
+
+        if ( '' === $column ) {
+            return;
+        }
+
+        $exists = $wpdb->get_var( $wpdb->prepare( "SHOW COLUMNS FROM `{$table}` LIKE %s", $column ) );
+
+        if ( $exists ) {
+            return;
+        }
+
+        $wpdb->query( "ALTER TABLE `{$table}` ADD COLUMN `{$column}` {$definition}" );
+    }
+
+    /**
+     * Backfills the webhook provider column for legacy rows.
+     *
+     * @return void
+     */
+    protected function backfill_webhook_provider() {
+        global $wpdb;
+
+        if ( ! $this->table_exists( $this->webhooks_table() ) ) {
+            return;
+        }
+
+        $wpdb->query(
+            $wpdb->prepare(
+                "UPDATE `{$this->webhooks_table()}` SET provider = %s WHERE provider IS NULL OR provider = ''",
+                'stripe'
+            )
+        );
     }
 
     /**
@@ -964,30 +1017,41 @@ class Ecosplay_Referrals_Store {
     }
 
     /**
-     * Records the reception of a Stripe webhook payload.
+     * Records the reception of a webhook payload.
      *
-     * @param string              $type    Event type identifier.
-     * @param string              $status  Processing outcome label.
-     * @param array<string,mixed> $payload Payload forwarded by Stripe.
+     * @param string              $type           Event type identifier.
+     * @param string              $status         Processing outcome label.
+     * @param array<string,mixed> $payload        Payload forwarded by the provider.
+     * @param string              $provider       Provider identifier (stripe, tremendous, ...).
+     * @param string              $resource_state Optional resource state snapshot.
      *
      * @return int Insert identifier or 0 on failure.
      */
-    public function log_webhook_event( $type, $status, array $payload ) {
+    public function log_webhook_event( $type, $status, array $payload, $provider = 'stripe', $resource_state = '' ) {
         global $wpdb;
 
         if ( ! $this->table_exists( $this->webhooks_table() ) ) {
             return 0;
         }
 
+        $provider = substr( sanitize_key( $provider ), 0, 32 );
+
+        if ( '' === $provider ) {
+            $provider = 'generic';
+        }
+
+        $resource_state = substr( sanitize_text_field( $resource_state ), 0, 64 );
         $inserted = $wpdb->insert(
             $this->webhooks_table(),
             array(
-                'event_type' => substr( sanitize_text_field( $type ), 0, 191 ),
-                'status'     => substr( sanitize_key( $status ), 0, 32 ),
-                'payload'    => wp_json_encode( $payload ),
-                'created_at' => current_time( 'mysql' ),
+                'provider'       => $provider,
+                'event_type'     => substr( sanitize_text_field( $type ), 0, 191 ),
+                'status'         => substr( sanitize_key( $status ), 0, 32 ),
+                'resource_state' => '' === $resource_state ? null : $resource_state,
+                'payload'        => wp_json_encode( $payload ),
+                'created_at'     => current_time( 'mysql' ),
             ),
-            array( '%s', '%s', '%s', '%s' )
+            array( '%s', '%s', '%s', '%s', '%s' )
         );
 
         if ( false === $inserted ) {
@@ -1000,7 +1064,7 @@ class Ecosplay_Referrals_Store {
     /**
      * Lists webhook logs with optional filters.
      *
-     * @param array<string,mixed> $filters Filters: type, from, to, limit.
+     * @param array<string,mixed> $filters Filters: type, from, to, limit, provider, state.
      *
      * @return array<int,object>
      */
@@ -1016,6 +1080,8 @@ class Ecosplay_Referrals_Store {
             'from'  => '',
             'to'    => '',
             'limit' => 50,
+            'provider' => '',
+            'state'    => '',
         );
 
         $filters = array_merge( $defaults, $filters );
@@ -1023,9 +1089,19 @@ class Ecosplay_Referrals_Store {
         $where = array();
         $args  = array();
 
+        if ( '' !== $filters['provider'] ) {
+            $where[] = 'provider = %s';
+            $args[]  = substr( sanitize_key( $filters['provider'] ), 0, 32 );
+        }
+
         if ( '' !== $filters['type'] ) {
             $where[] = 'event_type = %s';
             $args[]  = substr( sanitize_text_field( $filters['type'] ), 0, 191 );
+        }
+
+        if ( '' !== $filters['state'] ) {
+            $where[] = 'resource_state = %s';
+            $args[]  = substr( sanitize_text_field( $filters['state'] ), 0, 64 );
         }
 
         if ( '' !== $filters['from'] ) {
@@ -1040,7 +1116,7 @@ class Ecosplay_Referrals_Store {
 
         $limit = max( 1, (int) $filters['limit'] );
 
-        $sql = "SELECT id, event_type, status, payload, created_at FROM {$this->webhooks_table()}";
+        $sql = "SELECT id, provider, event_type, status, resource_state, payload, created_at FROM {$this->webhooks_table()}";
 
         if ( ! empty( $where ) ) {
             $sql .= ' WHERE ' . implode( ' AND ', $where );
@@ -1059,16 +1135,25 @@ class Ecosplay_Referrals_Store {
     /**
      * Returns the list of distinct webhook event types stored.
      *
+     * @param string $provider Optional provider filter.
+     *
      * @return array<int,string>
      */
-    public function get_webhook_event_types() {
+    public function get_webhook_event_types( $provider = '' ) {
         global $wpdb;
 
         if ( ! $this->table_exists( $this->webhooks_table() ) ) {
             return array();
         }
 
-        $sql = "SELECT DISTINCT event_type FROM {$this->webhooks_table()} ORDER BY event_type ASC";
+        $sql = "SELECT DISTINCT event_type FROM {$this->webhooks_table()}";
+
+        if ( '' !== $provider ) {
+            $provider = substr( sanitize_key( $provider ), 0, 32 );
+            $sql     .= $wpdb->prepare( ' WHERE provider = %s', $provider );
+        }
+
+        $sql .= ' ORDER BY event_type ASC';
 
         return array_map( 'strval', $wpdb->get_col( $sql ) );
     }

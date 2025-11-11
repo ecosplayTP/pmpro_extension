@@ -60,7 +60,7 @@ class Ecosplay_Referrals_Stripe_Webhooks {
         $event = $request->get_json_params();
 
         if ( empty( $event['type'] ) || empty( $event['data']['object'] ) ) {
-            $this->store->log_webhook_event( isset( $event['type'] ) ? $event['type'] : 'unknown', 'invalid', (array) $event );
+            $this->store->log_webhook_event( isset( $event['type'] ) ? $event['type'] : 'unknown', 'invalid', (array) $event, 'stripe' );
 
             return new WP_REST_Response( array( 'received' => false ), 400 );
         }
@@ -109,7 +109,7 @@ class Ecosplay_Referrals_Stripe_Webhooks {
                 break;
         }
 
-        $this->store->log_webhook_event( $type, $status, (array) $event );
+        $this->store->log_webhook_event( $type, $status, (array) $event, 'stripe' );
 
         do_action( 'ecosplay_referrals_stripe_event_handled', $type, $object, $event );
 

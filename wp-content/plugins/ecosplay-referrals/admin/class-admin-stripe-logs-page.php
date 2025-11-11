@@ -80,10 +80,11 @@ class Ecosplay_Referrals_Admin_Stripe_Logs_Page {
         $to   = isset( $_GET['to'] ) ? $this->normalise_date( wp_unslash( $_GET['to'] ) ) : '';
 
         $this->filters = array(
-            'type'  => $type,
-            'from'  => $from,
-            'to'    => $to,
-            'limit' => 100,
+            'type'     => $type,
+            'from'     => $from,
+            'to'       => $to,
+            'limit'    => 100,
+            'provider' => 'stripe',
         );
     }
 
@@ -97,7 +98,7 @@ class Ecosplay_Referrals_Admin_Stripe_Logs_Page {
             $this->handle();
         }
 
-        $this->event_types = $this->service->get_webhook_event_types();
+        $this->event_types = $this->service->get_webhook_event_types( 'stripe' );
         $this->logs        = $this->service->get_webhook_logs( $this->filters );
 
         $logs        = $this->logs;
