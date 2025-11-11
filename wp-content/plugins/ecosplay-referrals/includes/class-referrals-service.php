@@ -32,12 +32,21 @@ class Ecosplay_Referrals_Service {
     protected $store;
 
     /**
+     * Stripe API client helper.
+     *
+     * @var Ecosplay_Referrals_Stripe_Client
+     */
+    protected $stripe_client;
+
+    /**
      * Wires hooks and stores dependencies.
      *
-     * @param Ecosplay_Referrals_Store $store Persistence facade.
+     * @param Ecosplay_Referrals_Store         $store         Persistence facade.
+     * @param Ecosplay_Referrals_Stripe_Client $stripe_client Stripe HTTP client.
      */
-    public function __construct( Ecosplay_Referrals_Store $store ) {
-        $this->store = $store;
+    public function __construct( Ecosplay_Referrals_Store $store, Ecosplay_Referrals_Stripe_Client $stripe_client ) {
+        $this->store         = $store;
+        $this->stripe_client = $stripe_client;
 
         add_action( 'pmpro_after_change_membership_level', array( $this, 'handle_membership_update' ), 10, 3 );
         add_action( 'pmpro_checkout_boxes', array( $this, 'render_checkout_field' ) );
@@ -45,6 +54,8 @@ class Ecosplay_Referrals_Service {
         add_filter( 'pmpro_checkout_level', array( $this, 'apply_referral_discount' ) );
         add_action( 'pmpro_after_checkout', array( $this, 'award_referral_rewards' ), 10, 2 );
         add_action( 'init', array( $this, 'prefill_from_query' ) );
+        add_action( 'ecosplay_referrals_request_payout', array( $this, 'handle_withdraw_request' ), 10, 4 );
+        add_action( 'ecosplay_referrals_admin_batch_payout', array( $this, 'handle_batch_payout' ), 10, 4 );
     }
 
     /**
@@ -85,6 +96,281 @@ class Ecosplay_Referrals_Service {
         }
 
         $this->store->regenerate_code( $user_id );
+    }
+
+    /**
+     * Ensures a Stripe Connect Express account exists for the given member.
+     *
+     * @param int $user_id Target user identifier.
+     *
+     * @return array<string,mixed>|WP_Error
+     */
+    public function ensure_stripe_account( $user_id ) {
+        $user_id = (int) $user_id;
+
+        if ( $user_id <= 0 ) {
+            return new WP_Error( 'ecosplay_referrals_invalid_user', __( 'Utilisateur invalide pour Stripe.', 'ecosplay-referrals' ) );
+        }
+
+        if ( ! $this->stripe_client->is_configured() ) {
+            return new WP_Error( 'ecosplay_referrals_stripe_missing_secret', __( 'Configurez la clé Stripe avant de poursuivre.', 'ecosplay-referrals' ) );
+        }
+
+        $this->ensure_user_code( $user_id );
+
+        $referral = $this->store->get_referral_by_user( $user_id );
+
+        if ( ! $referral ) {
+            return new WP_Error( 'ecosplay_referrals_missing_profile', __( 'Aucun profil de parrainage disponible.', 'ecosplay-referrals' ) );
+        }
+
+        if ( ! empty( $referral->stripe_account_id ) ) {
+            $account = $this->stripe_client->retrieve_account( $referral->stripe_account_id );
+
+            if ( is_wp_error( $account ) ) {
+                return $account;
+            }
+
+            $capabilities = isset( $account['capabilities'] ) && is_array( $account['capabilities'] ) ? $account['capabilities'] : array();
+            $this->store->save_stripe_account( $user_id, $referral->stripe_account_id, $capabilities );
+
+            return $account;
+        }
+
+        $user = get_userdata( $user_id );
+
+        if ( ! $user ) {
+            return new WP_Error( 'ecosplay_referrals_missing_user', __( 'Utilisateur introuvable pour la création Stripe.', 'ecosplay-referrals' ) );
+        }
+
+        $account_args = apply_filters(
+            'ecosplay_referrals_stripe_account_args',
+            array(
+                'type'         => 'express',
+                'country'      => $this->guess_country_code(),
+                'email'        => $user->user_email,
+                'capabilities' => array( 'transfers' => array( 'requested' => true ) ),
+                'metadata'     => array( 'user_id' => $user_id, 'site' => home_url() ),
+            ),
+            $user,
+            $this
+        );
+
+        $account = $this->stripe_client->create_account( $account_args );
+
+        if ( is_wp_error( $account ) ) {
+            return $account;
+        }
+
+        if ( empty( $account['id'] ) ) {
+            return new WP_Error( 'ecosplay_referrals_stripe_account_missing_id', __( 'Stripe n\'a pas renvoyé d\'identifiant de compte.', 'ecosplay-referrals' ) );
+        }
+
+        $capabilities = isset( $account['capabilities'] ) && is_array( $account['capabilities'] ) ? $account['capabilities'] : array();
+        $this->store->save_stripe_account( $user_id, $account['id'], $capabilities );
+
+        do_action( 'ecosplay_referrals_stripe_account_created', $user_id, $account );
+
+        return $account;
+    }
+
+    /**
+     * Builds or refreshes an onboarding link for the connected account.
+     *
+     * @param int    $user_id     Member identifier.
+     * @param string $return_url  Success redirection URL.
+     * @param string $refresh_url Refresh URL when onboarding is interrupted.
+     * @param string $type        Stripe link type.
+     *
+     * @return array<string,mixed>|WP_Error
+     */
+    public function generate_account_link( $user_id, $return_url, $refresh_url, $type = 'account_onboarding' ) {
+        $return_url  = esc_url_raw( $return_url );
+        $refresh_url = esc_url_raw( $refresh_url );
+
+        if ( '' === $return_url || '' === $refresh_url ) {
+            return new WP_Error( 'ecosplay_referrals_missing_urls', __( 'Les URL de redirection Stripe sont obligatoires.', 'ecosplay-referrals' ) );
+        }
+
+        $account = $this->ensure_stripe_account( $user_id );
+
+        if ( is_wp_error( $account ) ) {
+            return $account;
+        }
+
+        $referral = $this->store->get_referral_by_user( (int) $user_id );
+
+        if ( ! $referral || empty( $referral->stripe_account_id ) ) {
+            return new WP_Error( 'ecosplay_referrals_missing_account', __( 'Le compte Stripe Connect est introuvable.', 'ecosplay-referrals' ) );
+        }
+
+        $args = apply_filters(
+            'ecosplay_referrals_stripe_account_link_args',
+            array(
+                'account'     => $referral->stripe_account_id,
+                'type'        => $type,
+                'return_url'  => $return_url,
+                'refresh_url' => $refresh_url,
+            ),
+            $user_id,
+            $type,
+            $this
+        );
+
+        $link = $this->stripe_client->create_account_link( $referral->stripe_account_id, $args );
+
+        if ( ! is_wp_error( $link ) ) {
+            do_action( 'ecosplay_referrals_stripe_account_link_generated', $user_id, $link );
+        }
+
+        return $link;
+    }
+
+    /**
+     * Generates a login link for the Express dashboard.
+     *
+     * @param int $user_id Member identifier.
+     *
+     * @return array<string,mixed>|WP_Error
+     */
+    public function generate_login_link( $user_id ) {
+        $referral = $this->store->get_referral_by_user( (int) $user_id );
+
+        if ( ! $referral || empty( $referral->stripe_account_id ) ) {
+            return new WP_Error( 'ecosplay_referrals_missing_account', __( 'Le compte Stripe Connect est introuvable.', 'ecosplay-referrals' ) );
+        }
+
+        $link = $this->stripe_client->create_login_link( $referral->stripe_account_id );
+
+        if ( ! is_wp_error( $link ) ) {
+            do_action( 'ecosplay_referrals_stripe_login_link_generated', $user_id, $link );
+        }
+
+        return $link;
+    }
+
+    /**
+     * Creates a transfer on Stripe and records it in the ledger.
+     *
+     * @param int                 $user_id  Beneficiary identifier.
+     * @param float               $amount   Amount in major currency units.
+     * @param string              $currency ISO currency code.
+     * @param array<string,mixed> $metadata Optional metadata forwarded to Stripe.
+     *
+     * @return array<string,mixed>|WP_Error
+     */
+    public function create_transfer( $user_id, $amount, $currency = 'eur', array $metadata = array() ) {
+        $user_id  = (int) $user_id;
+        $amount   = (float) $amount;
+        $currency = strtolower( (string) $currency );
+
+        if ( $user_id <= 0 ) {
+            return new WP_Error( 'ecosplay_referrals_invalid_user', __( 'Utilisateur invalide pour le transfert Stripe.', 'ecosplay-referrals' ) );
+        }
+
+        if ( $amount <= 0 ) {
+            return new WP_Error( 'ecosplay_referrals_invalid_amount', __( 'Le montant du transfert doit être positif.', 'ecosplay-referrals' ) );
+        }
+
+        if ( ! $this->stripe_client->is_configured() ) {
+            return new WP_Error( 'ecosplay_referrals_stripe_missing_secret', __( 'Configurez la clé Stripe avant de poursuivre.', 'ecosplay-referrals' ) );
+        }
+
+        $referral = $this->store->get_referral_by_user( $user_id );
+
+        if ( ! $referral || empty( $referral->stripe_account_id ) ) {
+            return new WP_Error( 'ecosplay_referrals_missing_account', __( 'Le compte Stripe Connect est introuvable.', 'ecosplay-referrals' ) );
+        }
+
+        $payload = apply_filters(
+            'ecosplay_referrals_transfer_args',
+            array(
+                'amount'      => (int) max( 1, round( $amount * 100 ) ),
+                'currency'    => $currency,
+                'destination' => $referral->stripe_account_id,
+                'metadata'    => $metadata,
+            ),
+            $user_id,
+            $amount,
+            $currency,
+            $metadata,
+            $this
+        );
+
+        $response = $this->stripe_client->create_transfer( $payload );
+
+        if ( is_wp_error( $response ) ) {
+            $this->store->record_payout_event(
+                array(
+                    'user_id'        => $user_id,
+                    'referral_id'    => (int) $referral->id,
+                    'amount'         => $amount,
+                    'currency'       => $currency,
+                    'status'         => 'failed',
+                    'failure_code'   => $response->get_error_code(),
+                    'failure_message'=> $response->get_error_message(),
+                    'metadata'       => $metadata,
+                )
+            );
+
+            return $response;
+        }
+
+        $transfer_id = isset( $response['id'] ) ? $response['id'] : null;
+        $payout_id   = isset( $response['destination_payment'] ) ? $response['destination_payment'] : null;
+
+        $this->store->record_payout_event(
+            array(
+                'user_id'     => $user_id,
+                'referral_id' => (int) $referral->id,
+                'amount'      => $amount,
+                'currency'    => $currency,
+                'status'      => 'pending',
+                'transfer_id' => $transfer_id,
+                'payout_id'   => $payout_id,
+                'metadata'    => $metadata,
+            )
+        );
+
+        do_action( 'ecosplay_referrals_transfer_created', $user_id, $response );
+
+        return $response;
+    }
+
+    /**
+     * Handles member-triggered withdrawal requests.
+     *
+     * @param int                 $user_id  Beneficiary identifier.
+     * @param float               $amount   Requested amount.
+     * @param string              $currency ISO currency code.
+     * @param array<string,mixed> $metadata Metadata forwarded to Stripe.
+     *
+     * @return array<string,mixed>|WP_Error
+     */
+    public function handle_withdraw_request( $user_id, $amount, $currency = 'eur', array $metadata = array() ) {
+        $result = $this->create_transfer( $user_id, $amount, $currency, $metadata );
+
+        do_action( 'ecosplay_referrals_withdraw_processed', $user_id, $result );
+
+        return $result;
+    }
+
+    /**
+     * Handles administrator-triggered payout batches.
+     *
+     * @param int                 $user_id  Beneficiary identifier.
+     * @param float               $amount   Amount to transfer.
+     * @param string              $currency ISO currency code.
+     * @param array<string,mixed> $metadata Metadata forwarded to Stripe.
+     *
+     * @return array<string,mixed>|WP_Error
+     */
+    public function handle_batch_payout( $user_id, $amount, $currency = 'eur', array $metadata = array() ) {
+        $result = $this->create_transfer( $user_id, $amount, $currency, $metadata );
+
+        do_action( 'ecosplay_referrals_batch_processed', $user_id, $result );
+
+        return $result;
     }
 
     /**
@@ -730,6 +1016,27 @@ class Ecosplay_Referrals_Service {
         $pmpro_msgt = 'pmpro_error';
 
         return false;
+    }
+
+    /**
+     * Attempts to guess a country ISO code suitable for Stripe onboarding.
+     *
+     * @return string
+     */
+    protected function guess_country_code() {
+        $locale = get_locale();
+
+        if ( preg_match( '/_([A-Z]{2})$/', $locale, $matches ) ) {
+            return strtoupper( $matches[1] );
+        }
+
+        $configured = get_option( 'pmpro_stripe_country', '' );
+
+        if ( is_string( $configured ) && '' !== $configured ) {
+            return strtoupper( substr( $configured, 0, 2 ) );
+        }
+
+        return 'FR';
     }
 
     /**

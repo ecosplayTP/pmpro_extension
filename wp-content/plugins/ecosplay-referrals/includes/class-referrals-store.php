@@ -48,6 +48,17 @@ class Ecosplay_Referrals_Store {
     }
 
     /**
+     * Database table name for payout ledger rows.
+     *
+     * @return string
+     */
+    protected function payouts_table() {
+        global $wpdb;
+
+        return $wpdb->prefix . 'ecos_referral_payouts';
+    }
+
+    /**
      * Creates or updates plugin tables on activation.
      *
      * @return void
@@ -64,9 +75,12 @@ class Ecosplay_Referrals_Store {
             user_id BIGINT(20) UNSIGNED NOT NULL,
             code VARCHAR(64) NOT NULL,
             earned_credits DECIMAL(10,2) NOT NULL DEFAULT 0,
+            total_paid DECIMAL(10,2) NOT NULL DEFAULT 0,
             is_active TINYINT(1) NOT NULL DEFAULT 1,
             notification_state TINYINT(1) NOT NULL DEFAULT 0,
             last_regenerated_at DATETIME NULL,
+            stripe_account_id VARCHAR(64) NULL,
+            stripe_capabilities LONGTEXT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NULL,
             UNIQUE KEY code (code),
@@ -96,6 +110,27 @@ class Ecosplay_Referrals_Store {
             UNIQUE KEY user_id (user_id)
         ) $charset;";
 
+        $sql_payouts = "CREATE TABLE {$this->payouts_table()} (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            referral_id BIGINT(20) UNSIGNED NULL,
+            user_id BIGINT(20) UNSIGNED NOT NULL,
+            amount DECIMAL(10,2) NOT NULL,
+            currency VARCHAR(10) NOT NULL DEFAULT 'EUR',
+            status VARCHAR(32) NOT NULL,
+            transfer_id VARCHAR(64) NULL,
+            payout_id VARCHAR(64) NULL,
+            failure_code VARCHAR(64) NULL,
+            failure_message VARCHAR(255) NULL,
+            metadata LONGTEXT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NULL,
+            PRIMARY KEY (id),
+            KEY referral_id (referral_id),
+            KEY user_id (user_id),
+            KEY transfer_id (transfer_id),
+            KEY payout_id (payout_id)
+        ) $charset;";
+
         $uses_table        = $this->uses_table();
         $uses_table_sql    = esc_sql( $uses_table );
         $column_check_sql  = $wpdb->prepare( "SHOW COLUMNS FROM `{$uses_table_sql}` LIKE %s", 'reward_amount' );
@@ -104,6 +139,7 @@ class Ecosplay_Referrals_Store {
         dbDelta( $sql_referrals );
         dbDelta( $sql_uses );
         dbDelta( $sql_notifications );
+        dbDelta( $sql_payouts );
 
         $has_reward_column = (bool) $wpdb->get_var( $column_check_sql );
 
@@ -115,6 +151,37 @@ class Ecosplay_Referrals_Store {
         if ( ! $had_reward_column && $has_reward_column ) {
             $wpdb->query( "UPDATE `{$uses_table_sql}` SET reward_amount = discount_amount" );
         }
+
+        $this->maybe_add_referral_column( 'stripe_account_id', 'VARCHAR(64) NULL' );
+        $this->maybe_add_referral_column( 'stripe_capabilities', 'LONGTEXT NULL' );
+        $this->maybe_add_referral_column( 'total_paid', "DECIMAL(10,2) NOT NULL DEFAULT 0" );
+    }
+
+    /**
+     * Ensures referral table columns exist without re-running full migrations.
+     *
+     * @param string $column     Column name to check.
+     * @param string $definition SQL fragment for column definition.
+     *
+     * @return void
+     */
+    protected function maybe_add_referral_column( $column, $definition ) {
+        global $wpdb;
+
+        $table  = esc_sql( $this->referrals_table() );
+        $column = sanitize_key( $column );
+
+        if ( '' === $column ) {
+            return;
+        }
+
+        $exists = $wpdb->get_var( $wpdb->prepare( "SHOW COLUMNS FROM `{$table}` LIKE %s", $column ) );
+
+        if ( $exists ) {
+            return;
+        }
+
+        $wpdb->query( "ALTER TABLE `{$table}` ADD COLUMN `{$column}` {$definition}" );
     }
 
     /**
@@ -127,7 +194,7 @@ class Ecosplay_Referrals_Store {
     public function get_active_codes( $only_available = true ) {
         global $wpdb;
 
-        $sql = "SELECT id, user_id, code, earned_credits, is_active, created_at, updated_at
+        $sql = "SELECT id, user_id, code, earned_credits, total_paid, stripe_account_id, stripe_capabilities, is_active, created_at, updated_at
             FROM {$this->referrals_table()}";
 
         if ( $only_available ) {
@@ -151,7 +218,7 @@ class Ecosplay_Referrals_Store {
 
         return $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id, user_id, code, earned_credits, is_active, notification_state, last_regenerated_at, created_at, updated_at
+                "SELECT id, user_id, code, earned_credits, total_paid, stripe_account_id, stripe_capabilities, is_active, notification_state, last_regenerated_at, created_at, updated_at
                  FROM {$this->referrals_table()} WHERE user_id = %d",
                 $user_id
             )
@@ -170,7 +237,7 @@ class Ecosplay_Referrals_Store {
 
         return $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id, user_id, code, earned_credits, is_active, notification_state, last_regenerated_at, created_at, updated_at
+                "SELECT id, user_id, code, earned_credits, total_paid, stripe_account_id, stripe_capabilities, is_active, notification_state, last_regenerated_at, created_at, updated_at
                  FROM {$this->referrals_table()} WHERE code = %s",
                 $code
             )
@@ -325,6 +392,349 @@ class Ecosplay_Referrals_Store {
         $total = $wpdb->get_var( "SELECT COALESCE(SUM(earned_credits),0) FROM {$this->referrals_table()} WHERE is_active = 1" );
 
         return (float) $total;
+    }
+
+    /**
+     * Persists the Stripe account identifier and capabilities for a member.
+     *
+     * @param int   $user_id      Related user identifier.
+     * @param string $account_id  Stripe account identifier.
+     * @param array $capabilities Capability map returned by Stripe.
+     *
+     * @return bool
+     */
+    public function save_stripe_account( $user_id, $account_id, array $capabilities = array() ) {
+        global $wpdb;
+
+        $user_id    = (int) $user_id;
+        $account_id = trim( (string) $account_id );
+
+        if ( $user_id <= 0 || '' === $account_id ) {
+            return false;
+        }
+
+        $encoded_capabilities = $this->encode_capabilities( $capabilities );
+
+        $data = array(
+            'stripe_account_id'   => $account_id,
+            'stripe_capabilities' => $encoded_capabilities,
+            'updated_at'          => current_time( 'mysql' ),
+        );
+
+        $formats = array( '%s', '%s', '%s' );
+
+        $result = $wpdb->update(
+            $this->referrals_table(),
+            $data,
+            array( 'user_id' => $user_id ),
+            $formats,
+            array( '%d' )
+        );
+
+        if ( false !== $result ) {
+            return true;
+        }
+
+        $this->regenerate_code( $user_id );
+
+        $result = $wpdb->update(
+            $this->referrals_table(),
+            $data,
+            array( 'user_id' => $user_id ),
+            $formats,
+            array( '%d' )
+        );
+
+        return false !== $result;
+    }
+
+    /**
+     * Updates only the stored capabilities for a referral entry.
+     *
+     * @param int   $referral_id Referral identifier.
+     * @param array $capabilities Capability information from Stripe.
+     *
+     * @return bool
+     */
+    public function update_stripe_capabilities( $referral_id, array $capabilities ) {
+        global $wpdb;
+
+        $referral_id = (int) $referral_id;
+
+        if ( $referral_id <= 0 ) {
+            return false;
+        }
+
+        $result = $wpdb->update(
+            $this->referrals_table(),
+            array(
+                'stripe_capabilities' => $this->encode_capabilities( $capabilities ),
+                'updated_at'          => current_time( 'mysql' ),
+            ),
+            array( 'id' => $referral_id ),
+            array( '%s', '%s' ),
+            array( '%d' )
+        );
+
+        return false !== $result;
+    }
+
+    /**
+     * Fetches a referral entry by its Stripe account identifier.
+     *
+     * @param string $account_id Stripe account identifier.
+     *
+     * @return object|null
+     */
+    public function get_referral_by_account( $account_id ) {
+        global $wpdb;
+
+        $account_id = trim( (string) $account_id );
+
+        if ( '' === $account_id ) {
+            return null;
+        }
+
+        return $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT id, user_id, code, earned_credits, total_paid, stripe_account_id, stripe_capabilities, is_active, notification_state, last_regenerated_at, created_at, updated_at
+                 FROM {$this->referrals_table()} WHERE stripe_account_id = %s",
+                $account_id
+            )
+        );
+    }
+
+    /**
+     * Inserts a payout ledger event.
+     *
+     * @param array<string,mixed> $args Event details.
+     *
+     * @return int Inserted row identifier or 0 on failure.
+     */
+    public function record_payout_event( array $args ) {
+        global $wpdb;
+
+        $defaults = array(
+            'user_id'        => 0,
+            'referral_id'    => 0,
+            'amount'         => 0,
+            'currency'       => 'EUR',
+            'status'         => '',
+            'transfer_id'    => null,
+            'payout_id'      => null,
+            'failure_code'   => null,
+            'failure_message'=> null,
+            'metadata'       => null,
+        );
+
+        $data = array_merge( $defaults, $args );
+
+        $metadata = $data['metadata'];
+
+        if ( is_array( $metadata ) || is_object( $metadata ) ) {
+            $metadata = wp_json_encode( $metadata );
+        }
+
+        $inserted = $wpdb->insert(
+            $this->payouts_table(),
+            array(
+                'user_id'        => (int) $data['user_id'],
+                'referral_id'    => (int) $data['referral_id'],
+                'amount'         => (float) $data['amount'],
+                'currency'       => strtoupper( substr( (string) $data['currency'], 0, 10 ) ),
+                'status'         => substr( (string) $data['status'], 0, 32 ),
+                'transfer_id'    => $data['transfer_id'] ? substr( (string) $data['transfer_id'], 0, 64 ) : null,
+                'payout_id'      => $data['payout_id'] ? substr( (string) $data['payout_id'], 0, 64 ) : null,
+                'failure_code'   => $data['failure_code'] ? substr( (string) $data['failure_code'], 0, 64 ) : null,
+                'failure_message'=> $data['failure_message'] ? substr( (string) $data['failure_message'], 0, 255 ) : null,
+                'metadata'       => $metadata,
+                'created_at'     => current_time( 'mysql' ),
+                'updated_at'     => current_time( 'mysql' ),
+            ),
+            array( '%d', '%d', '%f', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
+        );
+
+        if ( false === $inserted ) {
+            return 0;
+        }
+
+        return (int) $wpdb->insert_id;
+    }
+
+    /**
+     * Updates a payout ledger row referenced by its transfer identifier.
+     *
+     * @param string $transfer_id Stripe transfer identifier.
+     * @param string $status      New status label.
+     * @param array  $fields      Additional fields to persist.
+     *
+     * @return bool
+     */
+    public function update_payout_by_transfer( $transfer_id, $status, array $fields = array() ) {
+        return $this->update_payout_row( 'transfer_id', $transfer_id, $status, $fields );
+    }
+
+    /**
+     * Updates a payout ledger row referenced by its payout identifier.
+     *
+     * @param string $payout_id Stripe payout identifier.
+     * @param string $status    Status label to persist.
+     * @param array  $fields    Optional extra fields.
+     *
+     * @return bool
+     */
+    public function update_payout_by_payout( $payout_id, $status, array $fields = array() ) {
+        return $this->update_payout_row( 'payout_id', $payout_id, $status, $fields );
+    }
+
+    /**
+     * Increments the total paid amount for a referral entry.
+     *
+     * @param int   $referral_id Referral identifier.
+     * @param float $amount      Amount to add.
+     *
+     * @return bool
+     */
+    public function increment_total_paid( $referral_id, $amount ) {
+        global $wpdb;
+
+        $referral_id = (int) $referral_id;
+        $amount      = (float) $amount;
+
+        if ( $referral_id <= 0 || $amount <= 0 ) {
+            return false;
+        }
+
+        $result = $wpdb->query(
+            $wpdb->prepare(
+                "UPDATE {$this->referrals_table()} SET total_paid = total_paid + %f, updated_at = CURRENT_TIMESTAMP WHERE id = %d",
+                $amount,
+                $referral_id
+            )
+        );
+
+        return false !== $result;
+    }
+
+    /**
+     * Normalises capabilities into a storable JSON representation.
+     *
+     * @param array $capabilities Capability payload.
+     *
+     * @return string
+     */
+    protected function encode_capabilities( array $capabilities ) {
+        if ( empty( $capabilities ) ) {
+            return '';
+        }
+
+        return wp_json_encode( $capabilities );
+    }
+
+    /**
+     * Updates payout rows by identifier and tracks success transitions.
+     *
+     * @param string $column Identifier column.
+     * @param string $value  Identifier value.
+     * @param string $status New status value.
+     * @param array  $fields Additional data to save.
+     *
+     * @return bool
+     */
+    protected function update_payout_row( $column, $value, $status, array $fields ) {
+        global $wpdb;
+
+        $column = sanitize_key( $column );
+        $value  = trim( (string) $value );
+
+        if ( '' === $column || '' === $value ) {
+            return false;
+        }
+
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT * FROM {$this->payouts_table()} WHERE {$column} = %s ORDER BY id DESC LIMIT 1",
+                $value
+            )
+        );
+
+        if ( ! $row ) {
+            return false;
+        }
+
+        $data = array( 'status' => substr( (string) $status, 0, 32 ), 'updated_at' => current_time( 'mysql' ) );
+
+        foreach ( $fields as $key => $field_value ) {
+            switch ( $key ) {
+                case 'failure_code':
+                case 'failure_message':
+                case 'transfer_id':
+                case 'payout_id':
+                    $data[ $key ] = $this->truncate_field( $key, $field_value );
+                    break;
+                case 'metadata':
+                    if ( is_array( $field_value ) || is_object( $field_value ) ) {
+                        $data[ $key ] = wp_json_encode( $field_value );
+                    } else {
+                        $data[ $key ] = (string) $field_value;
+                    }
+                    break;
+            }
+        }
+
+        $updated = $wpdb->update(
+            $this->payouts_table(),
+            $data,
+            array( 'id' => (int) $row->id ),
+            array_fill( 0, count( $data ), '%s' ),
+            array( '%d' )
+        );
+
+        if ( false === $updated ) {
+            return false;
+        }
+
+        if ( $this->is_success_status( $status ) && ! $this->is_success_status( $row->status ) ) {
+            $this->increment_total_paid( (int) $row->referral_id, (float) $row->amount );
+        }
+
+        return true;
+    }
+
+    /**
+     * Determines whether a payout status represents a successful transfer.
+     *
+     * @param string $status Status label.
+     *
+     * @return bool
+     */
+    protected function is_success_status( $status ) {
+        $status = strtolower( (string) $status );
+
+        return in_array( $status, array( 'created', 'paid', 'succeeded', 'completed' ), true );
+    }
+
+    /**
+     * Trims arbitrary values to fit column limits.
+     *
+     * @param string     $field Field name.
+     * @param string|int $value Raw value.
+     *
+     * @return string
+     */
+    protected function truncate_field( $field, $value ) {
+        $value = (string) $value;
+
+        switch ( $field ) {
+            case 'failure_code':
+            case 'transfer_id':
+            case 'payout_id':
+                return substr( $value, 0, 64 );
+            case 'failure_message':
+                return substr( $value, 0, 255 );
+        }
+
+        return $value;
     }
 
     /**
