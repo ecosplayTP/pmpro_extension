@@ -178,12 +178,95 @@ class Ecosplay_Referrals_Tremendous_Client {
     }
 
     /**
-     * Retrieves the available Tremendous funding balance.
+     * Retrieves the available Tremendous funding balance in raw form.
      *
      * @return array<string,mixed>|WP_Error
      */
     public function fetch_balance() {
         return $this->request( 'GET', 'funding_sources' );
+    }
+
+    /**
+     * Returns the parsed Tremendous balance and related metadata.
+     *
+     * @return array<string,mixed>|WP_Error
+     */
+    public function get_funding_source_balance() {
+        $response = $this->fetch_balance();
+
+        if ( is_wp_error( $response ) ) {
+            return $response;
+        }
+
+        $sources = array();
+
+        if ( isset( $response['funding_sources'] ) && is_array( $response['funding_sources'] ) ) {
+            $sources = $response['funding_sources'];
+        } elseif ( isset( $response['data'] ) && is_array( $response['data'] ) ) {
+            $sources = $response['data'];
+        } elseif ( is_array( $response ) ) {
+            $sources = $response;
+        }
+
+        $result = array(
+            'funding_source_id' => '',
+            'available'         => 0.0,
+            'currency'          => '',
+            'method'            => '',
+            'funding_source'    => null,
+            'raw'               => $response,
+        );
+
+        foreach ( $sources as $entry ) {
+            if ( ! is_array( $entry ) ) {
+                continue;
+            }
+
+            $available = null;
+
+            if ( isset( $entry['meta']['available_cents'] ) ) {
+                $available = (float) $entry['meta']['available_cents'] / 100;
+            } elseif ( isset( $entry['balance']['available'] ) ) {
+                $available = (float) $entry['balance']['available'];
+            } elseif ( isset( $entry['available_balance'] ) ) {
+                $available = (float) $entry['available_balance'];
+            }
+
+            if ( null === $available ) {
+                continue;
+            }
+
+            $permissions = isset( $entry['usage_permissions'] ) && is_array( $entry['usage_permissions'] )
+                ? array_map( 'strtolower', array_map( 'strval', $entry['usage_permissions'] ) )
+                : array();
+
+            if ( ! empty( $permissions ) && ! array_intersect( $permissions, array( 'api_orders', 'balance_funding', 'dashboard_orders' ) ) ) {
+                continue;
+            }
+
+            $method = isset( $entry['method'] ) ? strtolower( (string) $entry['method'] ) : '';
+
+            if ( '' === $result['method'] && 'balance' !== $method && 0.0 !== $result['available'] ) {
+                // Keep the previously selected balance-oriented source when present.
+                continue;
+            }
+
+            $available = max( 0.0, round( $available, 2 ) );
+
+            $should_replace = ( 'balance' === $method && 'balance' !== strtolower( (string) $result['method'] ) ) || $available > $result['available'];
+
+            if ( ! $should_replace ) {
+                continue;
+            }
+
+            $result['available']         = $available;
+            $result['funding_source_id'] = isset( $entry['id'] ) ? (string) $entry['id'] : '';
+            $result['currency']          = isset( $entry['currency'] ) ? strtoupper( (string) $entry['currency'] ) : $result['currency'];
+            $result['method']            = isset( $entry['method'] ) ? (string) $entry['method'] : '';
+            $result['funding_source']    = $entry;
+        }
+
+        return $result;
     }
 
     /**

@@ -353,7 +353,7 @@ class Ecosplay_Referrals_Service {
             return new WP_Error( 'ecosplay_referrals_missing_account', __( 'Le compte Stripe Connect est introuvable.', 'ecosplay-referrals' ) );
         }
 
-        $balance_status = $this->check_platform_balance( $amount, $currency );
+        $balance_status = $this->check_platform_balance( $amount, $currency, 'stripe' );
 
         if ( ! $balance_status['ok'] ) {
             $this->handle_balance_alert(
@@ -362,6 +362,7 @@ class Ecosplay_Referrals_Service {
                 array(
                     'user_id'     => $user_id,
                     'referral_id' => (int) $referral->id,
+                    'provider'    => 'stripe',
                 )
             );
 
@@ -464,25 +465,78 @@ class Ecosplay_Referrals_Service {
     }
 
     /**
-     * Interroge Stripe pour vérifier le solde disponible avant un paiement.
+     * Vérifie le solde disponible côté fournisseur avant un paiement.
      *
      * @param float  $expected_payout Montant attendu en devise principale.
      * @param string $currency        Devise visée (ISO, minuscule).
+     * @param string $provider        Fournisseur ciblé (stripe|tremendous).
      *
      * @return array<string,mixed>
      */
-    public function check_platform_balance( $expected_payout, $currency = self::DEFAULT_CURRENCY ) {
-        $expected  = max( 0.0, (float) $expected_payout );
-        $currency  = strtolower( (string) $currency );
-        $available = 0.0;
-        $result    = array(
+    public function check_platform_balance( $expected_payout, $currency = self::DEFAULT_CURRENCY, $provider = 'stripe' ) {
+        $expected = max( 0.0, (float) $expected_payout );
+        $currency = strtolower( (string) $currency );
+        $provider = strtolower( (string) $provider );
+
+        $result = array(
             'ok'        => true,
             'required'  => $expected,
             'currency'  => $currency,
-            'available' => $available,
+            'available' => 0.0,
+            'provider'  => $provider,
         );
 
         if ( $expected <= 0 ) {
+            return $result;
+        }
+
+        if ( 'tremendous' === $provider ) {
+            if ( ! $this->is_tremendous_enabled() ) {
+                $result['ok']    = false;
+                $result['error'] = $this->tremendous_disabled_error();
+
+                return $result;
+            }
+
+            if ( ! $this->tremendous_client || ! $this->tremendous_client->is_configured() ) {
+                $result['ok']    = false;
+                $result['error'] = new WP_Error( 'ecosplay_referrals_tremendous_unconfigured', __( 'Configurez l’accès Tremendous avant de poursuivre.', 'ecosplay-referrals' ) );
+
+                return $result;
+            }
+
+            $balance = $this->tremendous_client->get_funding_source_balance();
+
+            if ( is_wp_error( $balance ) ) {
+                $result['ok']    = false;
+                $result['error'] = $balance;
+
+                return $result;
+            }
+
+            if ( isset( $balance['available'] ) ) {
+                $result['available'] = max( 0.0, (float) $balance['available'] );
+            }
+
+            if ( isset( $balance['currency'] ) && '' !== $balance['currency'] ) {
+                $result['currency'] = strtolower( (string) $balance['currency'] );
+            }
+
+            if ( isset( $balance['funding_source_id'] ) && '' !== $balance['funding_source_id'] ) {
+                $result['funding_source_id'] = (string) $balance['funding_source_id'];
+            }
+
+            if ( isset( $balance['method'] ) && '' !== $balance['method'] ) {
+                $result['funding_source_method'] = (string) $balance['method'];
+            }
+
+            if ( isset( $balance['funding_source'] ) ) {
+                $result['funding_source'] = $balance['funding_source'];
+            }
+
+            $result['raw'] = isset( $balance['raw'] ) ? $balance['raw'] : $balance;
+            $result['ok']  = $result['available'] >= $expected;
+
             return $result;
         }
 
@@ -494,9 +548,8 @@ class Ecosplay_Referrals_Service {
         }
 
         if ( ! $this->stripe_client->is_configured() ) {
-            $error             = new WP_Error( 'ecosplay_referrals_stripe_missing_secret', __( 'Configurez la clé Stripe avant de poursuivre.', 'ecosplay-referrals' ) );
-            $result['ok']      = false;
-            $result['error']   = $error;
+            $result['ok']    = false;
+            $result['error'] = new WP_Error( 'ecosplay_referrals_stripe_missing_secret', __( 'Configurez la clé Stripe avant de poursuivre.', 'ecosplay-referrals' ) );
 
             return $result;
         }
@@ -520,15 +573,14 @@ class Ecosplay_Referrals_Service {
                     continue;
                 }
 
-                $amount    = isset( $entry['amount'] ) ? floatval( $entry['amount'] ) : 0.0;
-                $available = round( $amount / 100, 2 );
+                $amount               = isset( $entry['amount'] ) ? floatval( $entry['amount'] ) : 0.0;
+                $result['available']  = round( $amount / 100, 2 );
                 break;
             }
         }
 
-        $result['available'] = $available;
-        $result['raw']       = $response;
-        $result['ok']        = $available >= $expected;
+        $result['raw'] = $response;
+        $result['ok']  = $result['available'] >= $expected;
 
         return $result;
     }
@@ -781,7 +833,7 @@ class Ecosplay_Referrals_Service {
         $currency        = self::DEFAULT_CURRENCY;
 
         if ( $this->is_stripe_enabled() ) {
-            $balance_status = $this->check_platform_balance( $reward_amount, $currency );
+            $balance_status = $this->check_platform_balance( $reward_amount, $currency, 'stripe' );
 
             if ( ! $balance_status['ok'] ) {
                 $this->handle_balance_alert(
@@ -792,6 +844,25 @@ class Ecosplay_Referrals_Service {
                         'referral_id' => (int) $referral->id,
                         'order_id'    => $order_id,
                         'code'        => $code,
+                        'provider'    => 'stripe',
+                    )
+                );
+            }
+        }
+
+        if ( $this->is_tremendous_enabled() ) {
+            $tremendous_status = $this->check_platform_balance( $reward_amount, $currency, 'tremendous' );
+
+            if ( ! $tremendous_status['ok'] ) {
+                $this->handle_balance_alert(
+                    'reward',
+                    $tremendous_status,
+                    array(
+                        'user_id'     => (int) $referral->user_id,
+                        'referral_id' => (int) $referral->id,
+                        'order_id'    => $order_id,
+                        'code'        => $code,
+                        'provider'    => 'tremendous',
                     )
                 );
             }
@@ -921,28 +992,47 @@ class Ecosplay_Referrals_Service {
     }
 
     /**
-     * Déclenche la vérification quotidienne planifiée du solde Stripe.
+     * Déclenche la vérification quotidienne planifiée des soldes de paiement.
      *
      * @return void
      */
     public function run_daily_balance_check() {
-        if ( ! $this->is_stripe_enabled() ) {
-            return;
-        }
-
         $threshold = $this->get_balance_alert_threshold();
 
         if ( $threshold <= 0 ) {
             return;
         }
 
-        $status = $this->check_platform_balance( $threshold, self::DEFAULT_CURRENCY );
+        $providers = array();
 
-        if ( $status['ok'] ) {
+        if ( $this->is_stripe_enabled() ) {
+            $providers[] = 'stripe';
+        }
+
+        if ( $this->is_tremendous_enabled() ) {
+            $providers[] = 'tremendous';
+        }
+
+        if ( empty( $providers ) ) {
             return;
         }
 
-        $this->handle_balance_alert( 'cron', $status, array( 'threshold' => $threshold ) );
+        foreach ( $providers as $provider ) {
+            $status = $this->check_platform_balance( $threshold, self::DEFAULT_CURRENCY, $provider );
+
+            if ( $status['ok'] ) {
+                continue;
+            }
+
+            $this->handle_balance_alert(
+                'cron',
+                $status,
+                array(
+                    'threshold' => $threshold,
+                    'provider'  => $provider,
+                )
+            );
+        }
     }
 
     /**
@@ -1471,20 +1561,24 @@ class Ecosplay_Referrals_Service {
             return new WP_Error( 'ecosplay_referrals_wallet_missing', __( 'Profil de parrainage introuvable.', 'ecosplay-referrals' ) );
         }
 
-        $user_id        = (int) $referral->user_id;
-        $organization_id = isset( $referral->tremendous_organization_id ) ? (string) $referral->tremendous_organization_id : '';
-        $status         = isset( $referral->tremendous_status ) ? (string) $referral->tremendous_status : '';
-        $message        = isset( $referral->tremendous_status_message ) ? (string) $referral->tremendous_status_message : '';
-        $balance        = isset( $referral->tremendous_balance ) ? $referral->tremendous_balance : null;
-        $errors         = array();
+        $user_id               = (int) $referral->user_id;
+        $organization_id       = isset( $referral->tremendous_organization_id ) ? (string) $referral->tremendous_organization_id : '';
+        $status                = isset( $referral->tremendous_status ) ? (string) $referral->tremendous_status : '';
+        $message               = isset( $referral->tremendous_status_message ) ? (string) $referral->tremendous_status_message : '';
+        $balance               = isset( $referral->tremendous_balance ) ? $referral->tremendous_balance : null;
+        $funding_source_id     = '';
+        $funding_source_method = '';
+        $errors                = array();
 
         if ( '' === $organization_id ) {
             return array(
-                'status'          => 'unlinked',
-                'label'           => $this->format_tremendous_status_label( 'unlinked' ),
-                'errors'          => array(),
-                'balance'         => null,
-                'organization_id' => '',
+                'status'               => 'unlinked',
+                'label'                => $this->format_tremendous_status_label( 'unlinked' ),
+                'errors'               => array(),
+                'balance'              => null,
+                'organization_id'      => '',
+                'funding_source_id'    => '',
+                'funding_source_method'=> '',
             );
         }
 
@@ -1495,11 +1589,13 @@ class Ecosplay_Referrals_Service {
             $errors[] = __( 'La clé Tremendous n’est pas configurée.', 'ecosplay-referrals' );
 
             return array(
-                'status'          => $status ? $status : 'unconfigured',
-                'label'           => $this->format_tremendous_status_label( $status ? $status : 'unconfigured' ),
-                'errors'          => array_values( array_unique( array_filter( array_map( 'wp_strip_all_tags', $errors ) ) ) ),
-                'balance'         => is_numeric( $balance ) ? (float) $balance : null,
-                'organization_id' => $organization_id,
+                'status'               => $status ? $status : 'unconfigured',
+                'label'                => $this->format_tremendous_status_label( $status ? $status : 'unconfigured' ),
+                'errors'               => array_values( array_unique( array_filter( array_map( 'wp_strip_all_tags', $errors ) ) ) ),
+                'balance'              => is_numeric( $balance ) ? (float) $balance : null,
+                'organization_id'      => $organization_id,
+                'funding_source_id'    => '',
+                'funding_source_method'=> '',
             );
         }
 
@@ -1513,11 +1609,13 @@ class Ecosplay_Referrals_Service {
             $status = $status ? $status : 'error';
 
             return array(
-                'status'          => $status,
-                'label'           => $this->format_tremendous_status_label( $status ),
-                'errors'          => array_values( array_unique( array_filter( array_map( 'wp_strip_all_tags', $errors ) ) ) ),
-                'balance'         => is_numeric( $balance ) ? (float) $balance : null,
-                'organization_id' => $organization_id,
+                'status'               => $status,
+                'label'                => $this->format_tremendous_status_label( $status ),
+                'errors'               => array_values( array_unique( array_filter( array_map( 'wp_strip_all_tags', $errors ) ) ) ),
+                'balance'              => is_numeric( $balance ) ? (float) $balance : null,
+                'organization_id'      => $organization_id,
+                'funding_source_id'    => '',
+                'funding_source_method'=> '',
             );
         }
 
@@ -1541,16 +1639,22 @@ class Ecosplay_Referrals_Service {
             )
         );
 
-        $balance_response = $this->tremendous_client->fetch_balance();
+        $balance_response = $this->tremendous_client->get_funding_source_balance();
 
         if ( is_wp_error( $balance_response ) ) {
             $errors[] = $balance_response->get_error_message();
         } else {
-            $parsed_balance = $this->parse_tremendous_balance_response( $balance_response );
-
-            if ( null !== $parsed_balance ) {
-                $balance = $parsed_balance;
+            if ( isset( $balance_response['available'] ) && is_numeric( $balance_response['available'] ) ) {
+                $balance = (float) $balance_response['available'];
                 $this->store->save_tremendous_state( $user_id, array( 'tremendous_balance' => $balance ) );
+            }
+
+            if ( isset( $balance_response['funding_source_id'] ) ) {
+                $funding_source_id = (string) $balance_response['funding_source_id'];
+            }
+
+            if ( isset( $balance_response['method'] ) ) {
+                $funding_source_method = (string) $balance_response['method'];
             }
         }
 
@@ -1559,11 +1663,13 @@ class Ecosplay_Referrals_Service {
         }
 
         return array(
-            'status'          => $status,
-            'label'           => $this->format_tremendous_status_label( $status ),
-            'errors'          => array_values( array_unique( array_filter( array_map( 'wp_strip_all_tags', $errors ) ) ) ),
-            'balance'         => is_numeric( $balance ) ? (float) $balance : null,
-            'organization_id' => $organization_id,
+            'status'               => $status,
+            'label'                => $this->format_tremendous_status_label( $status ),
+            'errors'               => array_values( array_unique( array_filter( array_map( 'wp_strip_all_tags', $errors ) ) ) ),
+            'balance'              => is_numeric( $balance ) ? (float) $balance : null,
+            'organization_id'      => $organization_id,
+            'funding_source_id'    => $funding_source_id,
+            'funding_source_method'=> $funding_source_method,
         );
     }
 
@@ -1604,45 +1710,6 @@ class Ecosplay_Referrals_Service {
             default:
                 return __( 'Le statut Tremendous nécessite une vérification.', 'ecosplay-referrals' );
         }
-    }
-
-    /**
-     * Extrait un solde disponible depuis la réponse Tremendous.
-     *
-     * @param array<string,mixed> $response Réponse API brute.
-     *
-     * @return float|null
-     */
-    protected function parse_tremendous_balance_response( $response ) {
-        if ( isset( $response['data'] ) && is_array( $response['data'] ) ) {
-            $response = $response['data'];
-        }
-
-        if ( isset( $response['funding_sources'] ) && is_array( $response['funding_sources'] ) ) {
-            $response = $response['funding_sources'];
-        }
-
-        if ( isset( $response['available_balance'] ) ) {
-            return (float) $response['available_balance'];
-        }
-
-        if ( is_array( $response ) ) {
-            foreach ( $response as $entry ) {
-                if ( ! is_array( $entry ) ) {
-                    continue;
-                }
-
-                if ( isset( $entry['available_balance'] ) ) {
-                    return (float) $entry['available_balance'];
-                }
-
-                if ( isset( $entry['balance'] ) && is_array( $entry['balance'] ) && isset( $entry['balance']['available'] ) ) {
-                    return (float) $entry['balance']['available'];
-                }
-            }
-        }
-
-        return null;
     }
 
     /**
@@ -2074,7 +2141,7 @@ class Ecosplay_Referrals_Service {
     }
 
     /**
-     * Consigne et alerte lorsqu’un déficit Stripe est détecté.
+     * Consigne et alerte lorsqu’un déficit de solde est détecté.
      *
      * @param string              $source  Origine de la vérification (reward, transfer, cron).
      * @param array<string,mixed> $status  Statut retourné par check_platform_balance().
@@ -2083,13 +2150,35 @@ class Ecosplay_Referrals_Service {
      * @return void
      */
     protected function handle_balance_alert( $source, array $status, array $context = array() ) {
-        if ( isset( $status['error'] ) && $status['error'] instanceof WP_Error && self::STRIPE_DISABLED_ERROR === $status['error']->get_error_code() ) {
-            return;
+        $provider = isset( $status['provider'] ) ? strtolower( (string) $status['provider'] ) : '';
+
+        if ( isset( $context['provider'] ) && '' === $provider ) {
+            $provider = strtolower( (string) $context['provider'] );
+        }
+
+        if ( '' === $provider ) {
+            $provider = 'stripe';
+        }
+
+        if ( isset( $status['error'] ) && $status['error'] instanceof WP_Error ) {
+            $code = $status['error']->get_error_code();
+
+            if ( in_array( $code, array( self::STRIPE_DISABLED_ERROR, self::TREMENDOUS_DISABLED_ERROR ), true ) ) {
+                return;
+            }
         }
 
         $available = isset( $status['available'] ) ? (float) $status['available'] : 0.0;
         $required  = isset( $status['required'] ) ? (float) $status['required'] : 0.0;
         $currency  = isset( $status['currency'] ) ? strtoupper( (string) $status['currency'] ) : strtoupper( self::DEFAULT_CURRENCY );
+
+        if ( isset( $status['funding_source_id'] ) ) {
+            $context['funding_source_id'] = (string) $status['funding_source_id'];
+        }
+
+        if ( isset( $status['funding_source_method'] ) ) {
+            $context['funding_source_method'] = (string) $status['funding_source_method'];
+        }
 
         $payload = array_merge(
             $context,
@@ -2098,6 +2187,7 @@ class Ecosplay_Referrals_Service {
                 'required'  => $required,
                 'available' => $available,
                 'currency'  => $currency,
+                'provider'  => $provider,
                 'timestamp' => current_time( 'mysql' ),
             )
         );
@@ -2110,11 +2200,12 @@ class Ecosplay_Referrals_Service {
             $status_label             = 'error';
         }
 
-        $this->store->log_webhook_event( 'balance_alert', $status_label, $payload, 'stripe' );
+        $this->store->log_webhook_event( 'balance_alert', $status_label, $payload, $provider );
 
         $subject = sprintf(
-            /* translators: %s: currency code. */
-            __( '[ECOSplay] Alerte solde Stripe (%s)', 'ecosplay-referrals' ),
+            /* translators: 1: provider name. 2: currency code. */
+            __( '[ECOSplay] Alerte solde %1$s (%2$s)', 'ecosplay-referrals' ),
+            ucfirst( $provider ),
             $currency
         );
 
@@ -2126,6 +2217,16 @@ class Ecosplay_Referrals_Service {
 
         if ( isset( $payload['error_message'] ) ) {
             $lines[] = sprintf( __( 'Erreur : %s', 'ecosplay-referrals' ), $payload['error_message'] );
+        }
+
+        if ( 'tremendous' === $provider ) {
+            if ( isset( $context['funding_source_method'] ) && '' !== (string) $context['funding_source_method'] ) {
+                $lines[] = sprintf( __( 'Méthode Tremendous : %s', 'ecosplay-referrals' ), $context['funding_source_method'] );
+            }
+
+            if ( isset( $context['funding_source_id'] ) && '' !== (string) $context['funding_source_id'] ) {
+                $lines[] = sprintf( __( 'Funding source ID : %s', 'ecosplay-referrals' ), $context['funding_source_id'] );
+            }
         }
 
         $details = array();
