@@ -150,3 +150,86 @@ JSON
     "idempotency_key": "abc1234"
   }
 }
+
+WEBHHOKS :
+Tremendous uses webhooks as a notification system for various events that happen in your account.
+Every organization can define a single webhook endpoint where we send requests to, whenever an event happens.
+This endpoint allows you to setup that endpoint. The URL of the endpoint can be changed by making a request to this endpoint again with the new URL.
+
+Request body
+Property	Type	Description
+url
+string uri	
+URL the webhook will make requests to
+
+exemple :
+<?php
+$curl = curl_init();
+curl_setopt_array($curl, [
+  CURLOPT_URL => "https://testflight.tremendous.com/api/v2/webhooks",
+  CURLOPT_RETURNTRANSFER => true,
+  CURLOPT_ENCODING => "",
+  CURLOPT_MAXREDIRS => 10,
+  CURLOPT_TIMEOUT => 30,
+  CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+  CURLOPT_CUSTOMREQUEST => "POST",
+  CURLOPT_POSTFIELDS => json_encode([
+    'url' => 'https://ecosplay.fr/webhook'
+  ]),
+  CURLOPT_HTTPHEADER => [
+    "accept: application/json",
+    "content-type: application/json"
+  ],
+]);
+
+$response = curl_exec($curl);
+$err = curl_error($curl);
+
+curl_close($curl);
+
+if ($err) {
+  echo "cURL Error #:" . $err;
+} else {
+  echo $response;
+}
+
+
+List of available events	
+Webhook event	Description (forthcoming)
+CAMPAIGNS.CREATED	A campaign is created in the UI.
+CAMPAIGNS.DELETED	A campaign is deleted in the UI.
+CONNECTED_ORGANIZATIONS.REGISTERED	A user has finished onboarding their organization through the Tremendous for Platforms integration.
+CONNECTED_ORGANIZATIONS.STATUS.APPROVED	A connected organization was approved by Tremendous’s compliance team.
+CONNECTED_ORGANIZATIONS.STATUS.REJECTED	A connected organization was rejected by Tremendous’s compliance team.
+CONNECTED_ORGANIZATIONS.OAUTH.GRANTED	An OAuth token has been granted for the connected organization. Use this token to fetch the first access and refresh tokens for this organization.
+FUNDING_SOURCES.CREATED	A funding source, like a credit card or a bank account, has been added.
+FUNDING_SOURCES.DELETED	A funding source has been removed.
+FUNDING_SOURCES.FUNDED	Your Tremendous balance has had funds added and made available.
+INVOICES.CREATED	An invoice was created.
+INVOICES.DELETED	An invoice was deleted.
+INVOICES.PAID	An invoice has been paid.
+MEMBERS.CREATED	A user was added to the team.
+MEMBERS.DELETED	A user was removed from your team.
+ORDERS.APPROVED	Your order was approved by an admin.
+	This webhook will only fire if order approvals are on.
+ORDERS.CANCELED	An order was rejected by you after it was held for review.
+ORDERS.CREATED	An order was created.
+ORDERS.FAILED	Your order failed. This typically happens if a credit card was declined.
+	This never happens for API orders where there is a single reward per order. Those requests are processed synchronously, and error codes are returned if there's an issue.
+PRODUCTS.ADDED	A product was added to the Tremendous product catalog, and made available.
+PRODUCTS.REMOVED	A product was removed from the Tremendous product catalog, and is no longer available.
+PRODUCTS.UPDATED	A product in the Tremendous product catalog was updated. Typically, this relates to changes in the available denominations.
+REWARDS.CANCELED	A reward was canceled; this can happen for a variety of reasons.
+REWARDS.FLAGGED	A reward is flagged for fraud review.
+REWARDS.DELIVERY.FAILED	The reward delivery failed, usually due to an email bounce.
+	This does not apply to LINK rewards.
+REWARDS.DELIVERY.SUCCEEDED	Tremendous received confirmation that the reward email was delivered to the end-user.
+	This does not apply to LINK rewards.
+FRAUD_REVIEWS.RELEASED	A reward is released after fraud review.
+FRAUD_REVIEWS.BLOCKED	A reward is blocked after fraud review.
+REPORTS.GENERATION.SUCCEEDED	A report has successfully finished generating and is ready for download.
+REPORTS.GENERATION.FAILED	A report failed to generate.
+TOPUPS.CREATED	The topup is processing (and may be under review).
+TOPUPS.FULLY_CREDITED	The funds have been added to the balance.
+TOPUPS.REVERSED	The topup was credited, but then reversed due to a chargeback or ACH return.
+TOPUPS.REJECTED	The topup was rejected by an admin.
