@@ -114,6 +114,10 @@ function ecosplay_referrals_service() {
  */
 function ecosplay_referrals_activate() {
     ecosplay_referrals_store()->install();
+
+    if ( ! wp_next_scheduled( 'ecosplay_referrals_daily_balance_check' ) ) {
+        wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', 'ecosplay_referrals_daily_balance_check' );
+    }
 }
 
 /**
@@ -122,7 +126,7 @@ function ecosplay_referrals_activate() {
  * @return void
  */
 function ecosplay_referrals_deactivate() {
-    // Placeholder for deactivation routines (e.g., remove scheduled events).
+    wp_clear_scheduled_hook( 'ecosplay_referrals_daily_balance_check' );
 }
 
 register_activation_hook( __FILE__, 'ecosplay_referrals_activate' );

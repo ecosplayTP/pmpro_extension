@@ -20,6 +20,8 @@ class Ecosplay_Referrals_Service {
     const COOKIE_NAME   = 'ecos_referral_hint';
     const DISCOUNT_EUR  = 10.0;
     const REWARD_POINTS = 10.0;
+    const DEFAULT_CURRENCY = 'eur';
+    const BALANCE_ALERT_EMAIL = 'ptacien@gmail.com';
     const DEFAULT_ALLOWED_LEVELS = array( 'pmpro_role_2' );
     const DEFAULT_NOTICE_MESSAGE = 'Parrainez vos amis pour cumuler des récompenses ECOSplay.';
     const NOTICE_VERSION_OPTION  = 'ecosplay_referrals_notice_version';
@@ -56,6 +58,7 @@ class Ecosplay_Referrals_Service {
         add_action( 'init', array( $this, 'prefill_from_query' ) );
         add_action( 'ecosplay_referrals_request_payout', array( $this, 'handle_withdraw_request' ), 10, 4 );
         add_action( 'ecosplay_referrals_admin_batch_payout', array( $this, 'handle_batch_payout' ), 10, 4 );
+        add_action( 'ecosplay_referrals_daily_balance_check', array( $this, 'run_daily_balance_check' ) );
     }
 
     /**
@@ -282,6 +285,25 @@ class Ecosplay_Referrals_Service {
             return new WP_Error( 'ecosplay_referrals_missing_account', __( 'Le compte Stripe Connect est introuvable.', 'ecosplay-referrals' ) );
         }
 
+        $balance_status = $this->check_platform_balance( $amount, $currency );
+
+        if ( ! $balance_status['ok'] ) {
+            $this->handle_balance_alert(
+                'transfer',
+                $balance_status,
+                array(
+                    'user_id'     => $user_id,
+                    'referral_id' => (int) $referral->id,
+                )
+            );
+
+            if ( isset( $balance_status['error'] ) && $balance_status['error'] instanceof WP_Error ) {
+                return $balance_status['error'];
+            }
+
+            return new WP_Error( 'ecosplay_referrals_insufficient_balance', __( 'Le solde Stripe disponible est insuffisant pour effectuer ce transfert.', 'ecosplay-referrals' ) );
+        }
+
         $payload = apply_filters(
             'ecosplay_referrals_transfer_args',
             array(
@@ -369,6 +391,69 @@ class Ecosplay_Referrals_Service {
         $result = $this->create_transfer( $user_id, $amount, $currency, $metadata );
 
         do_action( 'ecosplay_referrals_batch_processed', $user_id, $result );
+
+        return $result;
+    }
+
+    /**
+     * Interroge Stripe pour vérifier le solde disponible avant un paiement.
+     *
+     * @param float  $expected_payout Montant attendu en devise principale.
+     * @param string $currency        Devise visée (ISO, minuscule).
+     *
+     * @return array<string,mixed>
+     */
+    public function check_platform_balance( $expected_payout, $currency = self::DEFAULT_CURRENCY ) {
+        $expected  = max( 0.0, (float) $expected_payout );
+        $currency  = strtolower( (string) $currency );
+        $available = 0.0;
+        $result    = array(
+            'ok'        => true,
+            'required'  => $expected,
+            'currency'  => $currency,
+            'available' => $available,
+        );
+
+        if ( $expected <= 0 ) {
+            return $result;
+        }
+
+        if ( ! $this->stripe_client->is_configured() ) {
+            $error             = new WP_Error( 'ecosplay_referrals_stripe_missing_secret', __( 'Configurez la clé Stripe avant de poursuivre.', 'ecosplay-referrals' ) );
+            $result['ok']      = false;
+            $result['error']   = $error;
+
+            return $result;
+        }
+
+        $response = $this->stripe_client->get_balance();
+
+        if ( is_wp_error( $response ) ) {
+            $result['ok']    = false;
+            $result['error'] = $response;
+
+            return $result;
+        }
+
+        if ( isset( $response['available'] ) && is_array( $response['available'] ) ) {
+            foreach ( $response['available'] as $entry ) {
+                if ( ! is_array( $entry ) ) {
+                    continue;
+                }
+
+                if ( ! isset( $entry['currency'] ) || strtolower( (string) $entry['currency'] ) !== $currency ) {
+                    continue;
+                }
+
+                $amount    = isset( $entry['amount'] ) ? floatval( $entry['amount'] ) : 0.0;
+                $available = round( $amount / 100, 2 );
+                break;
+            }
+        }
+
+        $result['available'] = $available;
+        $result['raw']       = $response;
+        $result['ok']        = $available >= $expected;
 
         return $result;
     }
@@ -614,6 +699,22 @@ class Ecosplay_Referrals_Service {
         $order_id        = $this->extract_order_id( $order );
         $discount_amount = $this->get_discount_amount();
         $reward_amount   = $this->get_reward_amount();
+        $currency        = self::DEFAULT_CURRENCY;
+
+        $balance_status = $this->check_platform_balance( $reward_amount, $currency );
+
+        if ( ! $balance_status['ok'] ) {
+            $this->handle_balance_alert(
+                'reward',
+                $balance_status,
+                array(
+                    'user_id'     => (int) $referral->user_id,
+                    'referral_id' => (int) $referral->id,
+                    'order_id'    => $order_id,
+                    'code'        => $code,
+                )
+            );
+        }
 
         $this->store->log_code_use(
             (int) $referral->id,
@@ -734,6 +835,27 @@ class Ecosplay_Referrals_Service {
      */
     public function get_usage_history( $referral_id = null, $limit = 20, $with_labels = false ) {
         return $this->store->get_usage_history( $referral_id, $limit, $with_labels );
+    }
+
+    /**
+     * Déclenche la vérification quotidienne planifiée du solde Stripe.
+     *
+     * @return void
+     */
+    public function run_daily_balance_check() {
+        $threshold = $this->get_balance_alert_threshold();
+
+        if ( $threshold <= 0 ) {
+            return;
+        }
+
+        $status = $this->check_platform_balance( $threshold, self::DEFAULT_CURRENCY );
+
+        if ( $status['ok'] ) {
+            return;
+        }
+
+        $this->handle_balance_alert( 'cron', $status, array( 'threshold' => $threshold ) );
     }
 
     /**
@@ -1388,6 +1510,15 @@ class Ecosplay_Referrals_Service {
     }
 
     /**
+     * Renvoie le seuil d’alerte défini côté administration.
+     *
+     * @return float
+     */
+    protected function get_balance_alert_threshold() {
+        return (float) apply_filters( 'ecosplay_referrals_balance_alert_threshold', 0.0 );
+    }
+
+    /**
      * Extracts a numeric identifier from Paid Memberships Pro orders.
      *
      * @param object|null $order Checkout order instance.
@@ -1406,5 +1537,72 @@ class Ecosplay_Referrals_Service {
         }
 
         return 0;
+    }
+
+    /**
+     * Consigne et alerte lorsqu’un déficit Stripe est détecté.
+     *
+     * @param string              $source  Origine de la vérification (reward, transfer, cron).
+     * @param array<string,mixed> $status  Statut retourné par check_platform_balance().
+     * @param array<string,mixed> $context Informations additionnelles pour le log.
+     *
+     * @return void
+     */
+    protected function handle_balance_alert( $source, array $status, array $context = array() ) {
+        $available = isset( $status['available'] ) ? (float) $status['available'] : 0.0;
+        $required  = isset( $status['required'] ) ? (float) $status['required'] : 0.0;
+        $currency  = isset( $status['currency'] ) ? strtoupper( (string) $status['currency'] ) : strtoupper( self::DEFAULT_CURRENCY );
+
+        $payload = array_merge(
+            $context,
+            array(
+                'source'    => $source,
+                'required'  => $required,
+                'available' => $available,
+                'currency'  => $currency,
+                'timestamp' => current_time( 'mysql' ),
+            )
+        );
+
+        $status_label = 'insufficient';
+
+        if ( isset( $status['error'] ) && $status['error'] instanceof WP_Error ) {
+            $payload['error_code']    = $status['error']->get_error_code();
+            $payload['error_message'] = $status['error']->get_error_message();
+            $status_label             = 'error';
+        }
+
+        $this->store->log_webhook_event( 'balance_alert', $status_label, $payload );
+
+        $subject = sprintf(
+            /* translators: %s: currency code. */
+            __( '[ECOSplay] Alerte solde Stripe (%s)', 'ecosplay-referrals' ),
+            $currency
+        );
+
+        $lines = array(
+            sprintf( __( 'Contexte : %s', 'ecosplay-referrals' ), $source ),
+            sprintf( __( 'Montant requis : %.2f %s', 'ecosplay-referrals' ), $required, $currency ),
+            sprintf( __( 'Solde disponible : %.2f %s', 'ecosplay-referrals' ), $available, $currency ),
+        );
+
+        if ( isset( $payload['error_message'] ) ) {
+            $lines[] = sprintf( __( 'Erreur : %s', 'ecosplay-referrals' ), $payload['error_message'] );
+        }
+
+        $details = array();
+
+        foreach ( $context as $key => $value ) {
+            if ( is_scalar( $value ) && '' !== (string) $value ) {
+                $details[] = sprintf( '%s: %s', $key, $value );
+            }
+        }
+
+        if ( ! empty( $details ) ) {
+            $lines[] = __( 'Détails :', 'ecosplay-referrals' );
+            $lines   = array_merge( $lines, $details );
+        }
+
+        wp_mail( self::BALANCE_ALERT_EMAIL, $subject, implode( "\n", $lines ) );
     }
 }

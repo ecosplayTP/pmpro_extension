@@ -33,6 +33,7 @@ class Ecosplay_Referrals_Admin_Settings {
         'notice_message'       => Ecosplay_Referrals_Service::DEFAULT_NOTICE_MESSAGE,
         'stripe_secret_key'    => '',
         'stripe_secret_exists' => false,
+        'balance_alert_threshold' => 0.0,
     );
 
     /**
@@ -57,6 +58,7 @@ class Ecosplay_Referrals_Admin_Settings {
         add_filter( 'ecosplay_referrals_reward_amount', array( $this, 'filter_reward' ) );
         add_filter( 'ecosplay_referrals_allowed_levels', array( $this, 'filter_allowed_levels' ) );
         add_filter( 'ecosplay_referrals_notice_message', array( $this, 'filter_notice_message' ) );
+        add_filter( 'ecosplay_referrals_balance_alert_threshold', array( $this, 'filter_balance_threshold' ) );
     }
 
     /**
@@ -159,6 +161,14 @@ class Ecosplay_Referrals_Admin_Settings {
             'ecosplay_referrals',
             'ecos_referrals_stripe'
         );
+
+        add_settings_field(
+            'ecos_referrals_balance_alert_threshold',
+            __( 'Seuil d’alerte solde Stripe (€)', 'ecosplay-referrals' ),
+            array( $this, 'render_balance_threshold_field' ),
+            'ecosplay_referrals',
+            'ecos_referrals_stripe'
+        );
     }
 
     /**
@@ -174,13 +184,15 @@ class Ecosplay_Referrals_Admin_Settings {
         $discount = isset( $input['discount_amount'] ) ? $this->sanitize_amount( $input['discount_amount'] ) : $this->defaults['discount_amount'];
         $reward   = isset( $input['reward_amount'] ) ? $this->sanitize_amount( $input['reward_amount'] ) : $this->defaults['reward_amount'];
         $levels   = isset( $input['allowed_levels'] ) ? $this->sanitize_allowed_levels( $input['allowed_levels'] ) : $this->defaults['allowed_levels'];
-        $message  = isset( $input['notice_message'] ) ? $this->sanitize_notice_message( $input['notice_message'] ) : $this->defaults['notice_message'];
-        $secret   = isset( $input['stripe_secret_key'] ) ? $this->sanitize_stripe_secret( $input['stripe_secret_key'] ) : null;
+        $message   = isset( $input['notice_message'] ) ? $this->sanitize_notice_message( $input['notice_message'] ) : $this->defaults['notice_message'];
+        $secret    = isset( $input['stripe_secret_key'] ) ? $this->sanitize_stripe_secret( $input['stripe_secret_key'] ) : null;
+        $threshold = isset( $input['balance_alert_threshold'] ) ? $this->sanitize_amount( $input['balance_alert_threshold'] ) : $this->defaults['balance_alert_threshold'];
 
         $sanitized['discount_amount'] = $discount;
         $sanitized['reward_amount']   = $reward;
         $sanitized['allowed_levels']  = $levels;
         $sanitized['notice_message']  = $message;
+        $sanitized['balance_alert_threshold'] = $threshold;
 
         if ( null !== $secret ) {
             $sanitized['stripe_secret_key'] = $secret['cipher'];
@@ -243,6 +255,24 @@ class Ecosplay_Referrals_Admin_Settings {
             '<input type="number" class="small-text" name="%1$s[reward_amount]" value="%2$s" step="0.01" min="0" />',
             esc_attr( $this->option_name ),
             esc_attr( $reward )
+        );
+    }
+
+    /**
+     * Displays the balance threshold input.
+     *
+     * @return void
+     */
+    public function render_balance_threshold_field() {
+        $options   = $this->get_options();
+        $threshold = isset( $options['balance_alert_threshold'] ) ? $options['balance_alert_threshold'] : $this->defaults['balance_alert_threshold'];
+
+        printf(
+            '<input type="number" class="small-text" name="%1$s[balance_alert_threshold]" value="%2$s" step="0.01" min="0" />' .
+            '<p class="description">%3$s</p>',
+            esc_attr( $this->option_name ),
+            esc_attr( $threshold ),
+            esc_html__( 'Une alerte quotidienne est envoyée lorsque le solde disponible passe sous ce seuil.', 'ecosplay-referrals' )
         );
     }
 
@@ -312,6 +342,23 @@ class Ecosplay_Referrals_Admin_Settings {
 
         if ( isset( $options['reward_amount'] ) ) {
             return (float) $options['reward_amount'];
+        }
+
+        return (float) $value;
+    }
+
+    /**
+     * Adjusts the balance threshold exposed to the service layer.
+     *
+     * @param float $value Default value.
+     *
+     * @return float
+     */
+    public function filter_balance_threshold( $value ) {
+        $options = $this->get_options();
+
+        if ( isset( $options['balance_alert_threshold'] ) ) {
+            return (float) $options['balance_alert_threshold'];
         }
 
         return (float) $value;
