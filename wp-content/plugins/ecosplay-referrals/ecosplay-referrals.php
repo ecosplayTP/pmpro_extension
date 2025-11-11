@@ -108,6 +108,25 @@ function ecosplay_referrals_service() {
 }
 
 /**
+ * Indicates whether Stripe features are enabled in the plugin settings.
+ *
+ * @return bool
+ */
+function ecosplay_referrals_is_stripe_enabled() {
+    static $enabled = null;
+
+    if ( null !== $enabled ) {
+        return $enabled;
+    }
+
+    $options = get_option( 'ecosplay_referrals_options', array() );
+
+    $enabled = is_array( $options ) && ! empty( $options['stripe_enabled'] );
+
+    return $enabled;
+}
+
+/**
  * Performs installation logic on plugin activation.
  *
  * @return void
@@ -161,8 +180,10 @@ function ecosplay_referrals_boot() {
 
     new Ecosplay_Referrals_Floating_Notice( $service );
     new Ecosplay_Referrals_Shortcodes( $service );
-    new Ecosplay_Referrals_Member_Wallet( $service );
-    new Ecosplay_Referrals_Stripe_Webhooks( ecosplay_referrals_store() );
+    if ( ecosplay_referrals_is_stripe_enabled() ) {
+        new Ecosplay_Referrals_Member_Wallet( $service );
+        new Ecosplay_Referrals_Stripe_Webhooks( ecosplay_referrals_store() );
+    }
 }
 
 add_action( 'plugins_loaded', 'ecosplay_referrals_boot' );
