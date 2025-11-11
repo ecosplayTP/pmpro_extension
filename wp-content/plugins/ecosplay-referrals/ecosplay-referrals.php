@@ -144,6 +144,8 @@ function ecosplay_referrals_boot() {
         require_once ECOSPLAY_REFERRALS_ADMIN . 'class-admin-codes-page.php';
         require_once ECOSPLAY_REFERRALS_ADMIN . 'class-admin-usage-page.php';
         require_once ECOSPLAY_REFERRALS_ADMIN . 'class-admin-stats-page.php';
+        require_once ECOSPLAY_REFERRALS_ADMIN . 'class-admin-payouts-page.php';
+        require_once ECOSPLAY_REFERRALS_ADMIN . 'class-admin-stripe-logs-page.php';
 
         $settings = new Ecosplay_Referrals_Admin_Settings( $service );
         new Ecosplay_Referrals_Admin_Menu( $service, $settings );

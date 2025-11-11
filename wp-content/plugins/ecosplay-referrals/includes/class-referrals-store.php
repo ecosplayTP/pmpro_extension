@@ -59,6 +59,17 @@ class Ecosplay_Referrals_Store {
     }
 
     /**
+     * Provides the table name storing webhook event logs.
+     *
+     * @return string
+     */
+    protected function webhooks_table() {
+        global $wpdb;
+
+        return $wpdb->prefix . 'ecos_referral_webhooks';
+    }
+
+    /**
      * Creates or updates plugin tables on activation.
      *
      * @return void
@@ -131,6 +142,17 @@ class Ecosplay_Referrals_Store {
             KEY payout_id (payout_id)
         ) $charset;";
 
+        $sql_webhooks = "CREATE TABLE {$this->webhooks_table()} (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            event_type VARCHAR(191) NOT NULL,
+            status VARCHAR(32) NOT NULL,
+            payload LONGTEXT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY event_type (event_type),
+            KEY created_at (created_at)
+        ) $charset;";
+
         $uses_table        = $this->uses_table();
         $uses_table_sql    = esc_sql( $uses_table );
         $column_check_sql  = $wpdb->prepare( "SHOW COLUMNS FROM `{$uses_table_sql}` LIKE %s", 'reward_amount' );
@@ -140,6 +162,7 @@ class Ecosplay_Referrals_Store {
         dbDelta( $sql_uses );
         dbDelta( $sql_notifications );
         dbDelta( $sql_payouts );
+        dbDelta( $sql_webhooks );
 
         $has_reward_column = (bool) $wpdb->get_var( $column_check_sql );
 
@@ -204,6 +227,76 @@ class Ecosplay_Referrals_Store {
         $sql .= ' ORDER BY created_at DESC';
 
         return $wpdb->get_results( $sql );
+    }
+
+    /**
+     * Summarises payout readiness for each referrer.
+     *
+     * @return array<int,object>
+     */
+    public function get_payouts_overview() {
+        global $wpdb;
+
+        $referrals = $this->referrals_table();
+        $uses      = $this->uses_table();
+        $payouts   = $this->payouts_table();
+        $users     = $wpdb->users;
+
+        $sql = "SELECT
+                r.id AS referral_id,
+                r.user_id,
+                u.display_name,
+                u.user_email,
+                r.stripe_account_id,
+                r.stripe_capabilities,
+                r.earned_credits,
+                r.total_paid,
+                COALESCE(r.earned_credits - r.total_paid, 0) AS balance,
+                COALESCE(usage_summary.last_use, r.created_at) AS last_use,
+                payout_summary.last_payout,
+                COALESCE(payout_summary.pending_amount, 0) AS pending_amount,
+                COALESCE(r.updated_at, r.created_at) AS referral_updated
+            FROM {$referrals} AS r
+            INNER JOIN {$users} AS u ON u.ID = r.user_id
+            LEFT JOIN (
+                SELECT referral_id, MAX(created_at) AS last_use
+                FROM {$uses}
+                GROUP BY referral_id
+            ) AS usage_summary ON usage_summary.referral_id = r.id
+            LEFT JOIN (
+                SELECT user_id, MAX(created_at) AS last_payout,
+                    SUM(CASE WHEN status IN ('pending','created') THEN amount ELSE 0 END) AS pending_amount
+                FROM {$payouts}
+                GROUP BY user_id
+            ) AS payout_summary ON payout_summary.user_id = r.user_id
+            WHERE r.is_active = 1
+            ORDER BY u.display_name ASC";
+
+        $rows = $wpdb->get_results( $sql );
+
+        if ( empty( $rows ) ) {
+            return array();
+        }
+
+        foreach ( $rows as $row ) {
+            $timestamps = array();
+
+            if ( ! empty( $row->last_use ) ) {
+                $timestamps[] = strtotime( $row->last_use );
+            }
+
+            if ( ! empty( $row->last_payout ) ) {
+                $timestamps[] = strtotime( $row->last_payout );
+            }
+
+            if ( ! empty( $row->referral_updated ) ) {
+                $timestamps[] = strtotime( $row->referral_updated );
+            }
+
+            $row->last_activity = empty( $timestamps ) ? null : max( $timestamps );
+        }
+
+        return $rows;
     }
 
     /**
@@ -532,6 +625,31 @@ class Ecosplay_Referrals_Store {
     }
 
     /**
+     * Retrieves payout ledger rows for a specific user.
+     *
+     * @param int $user_id WordPress user identifier.
+     *
+     * @return array<int,object>
+     */
+    public function get_user_payouts( $user_id ) {
+        global $wpdb;
+
+        $user_id = (int) $user_id;
+
+        if ( $user_id <= 0 ) {
+            return array();
+        }
+
+        $query = $wpdb->prepare(
+            "SELECT id, amount, currency, status, transfer_id, payout_id, failure_message, metadata, created_at
+            FROM {$this->payouts_table()} WHERE user_id = %d ORDER BY created_at DESC LIMIT 25",
+            $user_id
+        );
+
+        return $wpdb->get_results( $query );
+    }
+
+    /**
      * Inserts a payout ledger event.
      *
      * @param array<string,mixed> $args Event details.
@@ -762,6 +880,131 @@ class Ecosplay_Referrals_Store {
         }
 
         return $value;
+    }
+
+    /**
+     * Records the reception of a Stripe webhook payload.
+     *
+     * @param string              $type    Event type identifier.
+     * @param string              $status  Processing outcome label.
+     * @param array<string,mixed> $payload Payload forwarded by Stripe.
+     *
+     * @return int Insert identifier or 0 on failure.
+     */
+    public function log_webhook_event( $type, $status, array $payload ) {
+        global $wpdb;
+
+        if ( ! $this->table_exists( $this->webhooks_table() ) ) {
+            return 0;
+        }
+
+        $inserted = $wpdb->insert(
+            $this->webhooks_table(),
+            array(
+                'event_type' => substr( sanitize_text_field( $type ), 0, 191 ),
+                'status'     => substr( sanitize_key( $status ), 0, 32 ),
+                'payload'    => wp_json_encode( $payload ),
+                'created_at' => current_time( 'mysql' ),
+            ),
+            array( '%s', '%s', '%s', '%s' )
+        );
+
+        if ( false === $inserted ) {
+            return 0;
+        }
+
+        return (int) $wpdb->insert_id;
+    }
+
+    /**
+     * Lists webhook logs with optional filters.
+     *
+     * @param array<string,mixed> $filters Filters: type, from, to, limit.
+     *
+     * @return array<int,object>
+     */
+    public function get_webhook_logs( array $filters = array() ) {
+        global $wpdb;
+
+        if ( ! $this->table_exists( $this->webhooks_table() ) ) {
+            return array();
+        }
+
+        $defaults = array(
+            'type'  => '',
+            'from'  => '',
+            'to'    => '',
+            'limit' => 50,
+        );
+
+        $filters = array_merge( $defaults, $filters );
+
+        $where = array();
+        $args  = array();
+
+        if ( '' !== $filters['type'] ) {
+            $where[] = 'event_type = %s';
+            $args[]  = substr( sanitize_text_field( $filters['type'] ), 0, 191 );
+        }
+
+        if ( '' !== $filters['from'] ) {
+            $where[] = 'created_at >= %s';
+            $args[]  = sanitize_text_field( $filters['from'] ) . ' 00:00:00';
+        }
+
+        if ( '' !== $filters['to'] ) {
+            $where[] = 'created_at <= %s';
+            $args[]  = sanitize_text_field( $filters['to'] ) . ' 23:59:59';
+        }
+
+        $limit = max( 1, (int) $filters['limit'] );
+
+        $sql = "SELECT id, event_type, status, payload, created_at FROM {$this->webhooks_table()}";
+
+        if ( ! empty( $where ) ) {
+            $sql .= ' WHERE ' . implode( ' AND ', $where );
+        }
+
+        $sql .= ' ORDER BY created_at DESC';
+        $sql .= $wpdb->prepare( ' LIMIT %d', $limit );
+
+        if ( ! empty( $args ) ) {
+            $sql = $wpdb->prepare( $sql, $args );
+        }
+
+        return $wpdb->get_results( $sql );
+    }
+
+    /**
+     * Returns the list of distinct webhook event types stored.
+     *
+     * @return array<int,string>
+     */
+    public function get_webhook_event_types() {
+        global $wpdb;
+
+        if ( ! $this->table_exists( $this->webhooks_table() ) ) {
+            return array();
+        }
+
+        $sql = "SELECT DISTINCT event_type FROM {$this->webhooks_table()} ORDER BY event_type ASC";
+
+        return array_map( 'strval', $wpdb->get_col( $sql ) );
+    }
+
+    /**
+     * Indicates whether a custom table exists in the database.
+     *
+     * @param string $table Fully qualified table name.
+     *
+     * @return bool
+     */
+    protected function table_exists( $table ) {
+        global $wpdb;
+
+        $table = esc_sql( $table );
+
+        return (bool) $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) );
     }
 
     /**
