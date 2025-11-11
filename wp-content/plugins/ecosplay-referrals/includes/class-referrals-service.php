@@ -374,6 +374,103 @@ class Ecosplay_Referrals_Service {
     }
 
     /**
+     * Enregistre un paiement manuel dans le journal des virements.
+     *
+     * @param int    $user_id  Bénéficiaire.
+     * @param float  $amount   Montant crédité.
+     * @param string $currency Code devise ISO.
+     * @param string $note     Note explicative.
+     *
+     * @return int|WP_Error
+     */
+    public function record_manual_payout( $user_id, $amount, $currency = 'eur', $note = '' ) {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            return new WP_Error( 'ecosplay_referrals_forbidden', __( 'Vous ne pouvez pas enregistrer ce paiement.', 'ecosplay-referrals' ) );
+        }
+
+        $user_id  = (int) $user_id;
+        $amount   = round( (float) $amount, 2 );
+        $currency = strtolower( (string) $currency );
+        $note     = sanitize_text_field( $note );
+
+        if ( $user_id <= 0 ) {
+            return new WP_Error( 'ecosplay_referrals_invalid_user', __( 'Utilisateur invalide pour le paiement manuel.', 'ecosplay-referrals' ) );
+        }
+
+        if ( $amount <= 0 ) {
+            return new WP_Error( 'ecosplay_referrals_invalid_amount', __( 'Le montant doit être supérieur à zéro.', 'ecosplay-referrals' ) );
+        }
+
+        $referral = $this->store->get_referral_by_user( $user_id );
+
+        if ( ! $referral ) {
+            return new WP_Error( 'ecosplay_referrals_missing_profile', __( 'Aucun profil de parrainage pour ce membre.', 'ecosplay-referrals' ) );
+        }
+
+        $entry_id = $this->store->record_payout_event(
+            array(
+                'user_id'     => $user_id,
+                'referral_id' => (int) $referral->id,
+                'amount'      => $amount,
+                'currency'    => $currency,
+                'status'      => 'manual',
+                'metadata'    => array(
+                    'note'        => $note,
+                    'source'      => 'manual',
+                    'recorded_by' => get_current_user_id(),
+                ),
+            )
+        );
+
+        if ( $entry_id <= 0 ) {
+            return new WP_Error( 'ecosplay_referrals_manual_failed', __( 'Impossible d\'enregistrer le paiement manuel.', 'ecosplay-referrals' ) );
+        }
+
+        $this->store->increment_total_paid( (int) $referral->id, $amount );
+
+        do_action( 'ecosplay_referrals_manual_payout_recorded', $user_id, $amount, $note );
+
+        return $entry_id;
+    }
+
+    /**
+     * Annule un transfert Stripe en attente.
+     *
+     * @param string $transfer_id Identifiant du transfert Stripe.
+     *
+     * @return array<string,mixed>|WP_Error
+     */
+    public function cancel_transfer( $transfer_id ) {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            return new WP_Error( 'ecosplay_referrals_forbidden', __( 'Vous ne pouvez pas annuler ce transfert.', 'ecosplay-referrals' ) );
+        }
+
+        $transfer_id = trim( (string) $transfer_id );
+
+        if ( '' === $transfer_id ) {
+            return new WP_Error( 'ecosplay_referrals_missing_transfer', __( 'Transfert introuvable.', 'ecosplay-referrals' ) );
+        }
+
+        if ( ! $this->stripe_client->is_configured() ) {
+            return new WP_Error( 'ecosplay_referrals_stripe_missing_secret', __( 'Configurez la clé Stripe avant de poursuivre.', 'ecosplay-referrals' ) );
+        }
+
+        $response = $this->stripe_client->cancel_transfer( $transfer_id );
+
+        if ( is_wp_error( $response ) ) {
+            return $response;
+        }
+
+        $metadata = isset( $response['metadata'] ) ? $response['metadata'] : array();
+
+        $this->store->update_payout_by_transfer( $transfer_id, 'canceled', array( 'metadata' => $metadata ) );
+
+        do_action( 'ecosplay_referrals_transfer_canceled', $transfer_id, $response );
+
+        return $response;
+    }
+
+    /**
      * Outputs the referral input during checkout.
      *
      * @return void
@@ -584,6 +681,46 @@ class Ecosplay_Referrals_Service {
                 }
             )
         );
+    }
+
+    /**
+     * Retrieves payout overviews for administrative reporting.
+     *
+     * @return array<int,object>
+     */
+    public function get_payouts_overview() {
+        return $this->store->get_payouts_overview();
+    }
+
+    /**
+     * Lists payout ledger rows for a specific member.
+     *
+     * @param int $user_id User identifier.
+     *
+     * @return array<int,object>
+     */
+    public function get_user_payouts( $user_id ) {
+        return $this->store->get_user_payouts( $user_id );
+    }
+
+    /**
+     * Fetches webhook logs for the Stripe integration.
+     *
+     * @param array<string,mixed> $filters Optional filters.
+     *
+     * @return array<int,object>
+     */
+    public function get_webhook_logs( array $filters = array() ) {
+        return $this->store->get_webhook_logs( $filters );
+    }
+
+    /**
+     * Returns the available webhook event types recorded.
+     *
+     * @return array<int,string>
+     */
+    public function get_webhook_event_types() {
+        return $this->store->get_webhook_event_types();
     }
 
     /**

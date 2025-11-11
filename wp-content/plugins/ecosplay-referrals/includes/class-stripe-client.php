@@ -133,6 +133,23 @@ class Ecosplay_Referrals_Stripe_Client {
     }
 
     /**
+     * Cancels a pending transfer when permitted.
+     *
+     * @param string $transfer_id Stripe transfer identifier.
+     *
+     * @return array<string,mixed>|WP_Error
+     */
+    public function cancel_transfer( $transfer_id ) {
+        $transfer_id = trim( (string) $transfer_id );
+
+        if ( '' === $transfer_id ) {
+            return new WP_Error( 'ecosplay_stripe_missing_transfer', __( 'Identifiant de transfert manquant.', 'ecosplay-referrals' ) );
+        }
+
+        return $this->request( 'POST', '/v1/transfers/' . $transfer_id . '/cancel' );
+    }
+
+    /**
      * Retrieves the platform balance snapshot.
      *
      * @return array<string,mixed>|WP_Error

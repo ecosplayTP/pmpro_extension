@@ -195,6 +195,8 @@ class Ecosplay_Referrals_Admin_Menu {
             'codes'    => __( 'Codes actifs', 'ecosplay-referrals' ),
             'usage'    => __( 'Historique', 'ecosplay-referrals' ),
             'stats'    => __( 'Statistiques', 'ecosplay-referrals' ),
+            'payouts'  => __( 'Paiements', 'ecosplay-referrals' ),
+            'logs'     => __( 'Logs Stripe', 'ecosplay-referrals' ),
             'settings' => __( 'Réglages', 'ecosplay-referrals' ),
         );
     }
@@ -223,6 +225,12 @@ class Ecosplay_Referrals_Admin_Menu {
                 break;
             case 'stats':
                 $controller = new Ecosplay_Referrals_Admin_Stats_Page( $this->service );
+                break;
+            case 'payouts':
+                $controller = new Ecosplay_Referrals_Admin_Payouts_Page( $this->service );
+                break;
+            case 'logs':
+                $controller = new Ecosplay_Referrals_Admin_Stripe_Logs_Page( $this->service );
                 break;
             case 'settings':
                 $controller = $this->settings;

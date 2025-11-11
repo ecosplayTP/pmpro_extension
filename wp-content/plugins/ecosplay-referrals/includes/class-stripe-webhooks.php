@@ -60,42 +60,56 @@ class Ecosplay_Referrals_Stripe_Webhooks {
         $event = $request->get_json_params();
 
         if ( empty( $event['type'] ) || empty( $event['data']['object'] ) ) {
+            $this->store->log_webhook_event( isset( $event['type'] ) ? $event['type'] : 'unknown', 'invalid', (array) $event );
+
             return new WP_REST_Response( array( 'received' => false ), 400 );
         }
 
         $type   = (string) $event['type'];
         $object = (array) $event['data']['object'];
+        $status = 'ignored';
 
         switch ( $type ) {
             case 'account.updated':
                 $this->handle_account_updated( $object );
+                $status = 'processed';
                 break;
             case 'transfer.created':
             case 'transfer.updated':
                 $this->handle_transfer_event( $object, 'created' );
+                $status = 'processed';
                 break;
             case 'transfer.failed':
                 $this->handle_transfer_event( $object, 'failed' );
+                $status = 'processed';
                 break;
             case 'transfer.reversed':
                 $this->handle_transfer_event( $object, 'reversed' );
+                $status = 'processed';
                 break;
             case 'payout.created':
                 $this->handle_payout_event( $object, 'created' );
+                $status = 'processed';
                 break;
             case 'payout.paid':
                 $this->handle_payout_event( $object, 'paid' );
+                $status = 'processed';
                 break;
             case 'payout.failed':
                 $this->handle_payout_event( $object, 'failed' );
+                $status = 'processed';
                 break;
             case 'topup.succeeded':
                 $this->handle_topup_event( $object, 'succeeded' );
+                $status = 'processed';
                 break;
             case 'topup.failed':
                 $this->handle_topup_event( $object, 'failed' );
+                $status = 'processed';
                 break;
         }
+
+        $this->store->log_webhook_event( $type, $status, (array) $event );
 
         do_action( 'ecosplay_referrals_stripe_event_handled', $type, $object, $event );
 
