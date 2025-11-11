@@ -123,7 +123,7 @@ function ecosplay_referrals_is_stripe_enabled() {
 
     $enabled = is_array( $options ) && ! empty( $options['stripe_enabled'] );
 
-    return $enabled;
+    return (bool) apply_filters( 'ecosplay_referrals_is_stripe_enabled', $enabled );
 }
 
 /**
