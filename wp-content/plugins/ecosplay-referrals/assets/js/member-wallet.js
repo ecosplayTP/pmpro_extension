@@ -62,7 +62,8 @@
             earned_credits: 'earned_credits_formatted',
             total_paid: 'total_paid_formatted',
             available_balance: 'available_balance_formatted',
-            kyc_label: 'kyc_label',
+            association_label: 'association_label',
+            tremendous_balance_label: 'tremendous_balance_label',
         };
 
         Object.keys(mapping).forEach((key) => {
@@ -70,6 +71,10 @@
 
             if (target && wallet[mapping[key]] !== undefined) {
                 target.textContent = wallet[mapping[key]];
+
+                if (key === 'tremendous_balance_label') {
+                    target.style.display = wallet[mapping[key]] ? '' : 'none';
+                }
             }
         });
 
@@ -79,18 +84,53 @@
             hint.textContent = config.i18n.availableHint.replace('%s', wallet.available_balance_formatted);
         }
 
-        container.dataset.walletCanTransfer = wallet.can_transfer ? '1' : '0';
-        const transferSection = container.querySelector('[data-wallet-section="transfer"]');
+        container.dataset.walletCanRequest = wallet.can_request_reward ? '1' : '0';
+        container.dataset.walletAssociationStatus = wallet.association_status || '';
+        container.dataset.walletTremendousBalance = wallet.tremendous_balance_formatted || '';
+        const rewardSection = container.querySelector('[data-wallet-section="reward"]');
 
-        if (transferSection) {
-            transferSection.style.display = wallet.can_transfer ? '' : 'none';
+        if (rewardSection) {
+            rewardSection.style.display = wallet.can_request_reward ? '' : 'none';
         }
 
-        const dashboardButton = container.querySelector('[data-wallet-action="dashboard"]');
+        const associateButton = container.querySelector('[data-wallet-action="associate"]');
 
-        if (dashboardButton) {
-            dashboardButton.style.display = wallet.can_transfer ? '' : 'none';
+        if (associateButton) {
+            associateButton.style.display = wallet.is_associated ? 'none' : '';
+            associateButton.disabled = false;
         }
+
+        const refreshButton = container.querySelector('[data-wallet-action="refresh"]');
+
+        if (refreshButton) {
+            refreshButton.style.display = wallet.is_associated ? '' : 'none';
+            refreshButton.disabled = false;
+        }
+
+        updateAssociationErrors(container, wallet);
+    };
+
+    const updateAssociationErrors = (container, wallet) => {
+        const list = container.querySelector('[data-wallet-field="association_errors"]');
+
+        if (!list) {
+            return;
+        }
+
+        list.innerHTML = '';
+
+        if (!wallet.association_errors || !wallet.association_errors.length) {
+            list.style.display = 'none';
+            return;
+        }
+
+        wallet.association_errors.forEach((message) => {
+            const item = document.createElement('li');
+            item.textContent = message;
+            list.appendChild(item);
+        });
+
+        list.style.display = 'block';
     };
 
     const updateLedger = (container, wallet) => {
@@ -137,63 +177,82 @@
     };
 
     wallets.forEach((wallet) => {
-        const onboardingBtn = wallet.querySelector('[data-wallet-action="onboard"]');
-        const dashboardBtn = wallet.querySelector('[data-wallet-action="dashboard"]');
-        const transferForm = wallet.querySelector('[data-wallet-form="transfer"]');
+        const associateBtn = wallet.querySelector('[data-wallet-action="associate"]');
+        const refreshBtn = wallet.querySelector('[data-wallet-action="refresh"]');
+        const rewardForm = wallet.querySelector('[data-wallet-form="reward"]');
 
-        if (onboardingBtn) {
-            onboardingBtn.addEventListener('click', (event) => {
+        if (associateBtn) {
+            associateBtn.addEventListener('click', (event) => {
                 event.preventDefault();
-                onboardingBtn.disabled = true;
+                associateBtn.disabled = true;
                 renderNotice(wallet, 'success', '');
 
-                request(config.actions.onboard, { redirect: window.location.href })
+                request(config.actions.associate)
                     .then((response) => {
-                        if (response.success && response.data && response.data.redirect) {
-                            window.location.href = response.data.redirect;
+                        associateBtn.disabled = false;
+
+                        const message = response && response.data && response.data.message ? response.data.message : config.i18n.genericError;
+
+                        if (!response || !response.success) {
+                            renderNotice(wallet, 'error', message);
                             return;
                         }
 
-                        const message = response.data && response.data.message ? response.data.message : config.i18n.genericError;
-                        renderNotice(wallet, 'error', message);
-                        onboardingBtn.disabled = false;
+                        renderNotice(wallet, 'success', message || config.i18n.associationLinked);
+
+                        if (response.data && response.data.wallet) {
+                            updateMetrics(wallet, response.data.wallet);
+                            updateLedger(wallet, response.data.wallet);
+                        }
                     })
                     .catch(() => {
+                        associateBtn.disabled = false;
                         renderNotice(wallet, 'error', config.i18n.genericError);
-                        onboardingBtn.disabled = false;
                     });
             });
         }
 
-        if (dashboardBtn) {
-            dashboardBtn.addEventListener('click', (event) => {
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', (event) => {
                 event.preventDefault();
-                dashboardBtn.disabled = true;
+                refreshBtn.disabled = true;
                 renderNotice(wallet, 'success', '');
 
-                request(config.actions.dashboard)
+                request(config.actions.refresh)
                     .then((response) => {
-                        if (response.success && response.data && response.data.redirect) {
-                            window.location.href = response.data.redirect;
+                        refreshBtn.disabled = false;
+
+                        if (!response) {
+                            renderNotice(wallet, 'error', config.i18n.genericError);
                             return;
                         }
 
-                        const message = response.data && response.data.message ? response.data.message : config.i18n.genericError;
-                        renderNotice(wallet, 'error', message);
-                        dashboardBtn.disabled = false;
+                        const message = response.data && response.data.message ? response.data.message : '';
+
+                        if (!response.success) {
+                            renderNotice(wallet, 'error', message || config.i18n.genericError);
+                            return;
+                        }
+
+                        renderNotice(wallet, 'success', message || config.i18n.balanceRefreshed);
+
+                        if (response.data && response.data.wallet) {
+                            updateMetrics(wallet, response.data.wallet);
+                            updateLedger(wallet, response.data.wallet);
+                        }
                     })
                     .catch(() => {
+                        refreshBtn.disabled = false;
                         renderNotice(wallet, 'error', config.i18n.genericError);
-                        dashboardBtn.disabled = false;
                     });
             });
         }
 
-        if (transferForm) {
-            transferForm.addEventListener('submit', (event) => {
+        if (rewardForm) {
+            rewardForm.addEventListener('submit', (event) => {
                 event.preventDefault();
-                const submitButton = transferForm.querySelector('[type="submit"]');
-                const amountInput = transferForm.querySelector('[name="amount"]');
+                const submitButton = rewardForm.querySelector('[type="submit"]');
+                const amountInput = rewardForm.querySelector('[name="amount"]');
 
                 if (!amountInput || !submitButton) {
                     return;
@@ -204,7 +263,7 @@
                 submitButton.disabled = true;
                 renderNotice(wallet, 'success', '');
 
-                request(config.actions.transfer, { amount: amountValue })
+                request(config.actions.reward, { amount: amountValue })
                     .then((response) => {
                         submitButton.disabled = false;
 
@@ -220,7 +279,7 @@
                             return;
                         }
 
-                        renderNotice(wallet, 'success', message || config.i18n.transferRequested);
+                        renderNotice(wallet, 'success', message || config.i18n.rewardRequested);
                         amountInput.value = '';
 
                         if (response.data && response.data.wallet) {

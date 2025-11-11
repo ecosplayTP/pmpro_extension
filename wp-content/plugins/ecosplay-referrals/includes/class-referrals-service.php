@@ -26,6 +26,7 @@ class Ecosplay_Referrals_Service {
     const DEFAULT_NOTICE_MESSAGE = 'Parrainez vos amis pour cumuler des récompenses ECOSplay.';
     const NOTICE_VERSION_OPTION  = 'ecosplay_referrals_notice_version';
     const STRIPE_DISABLED_ERROR  = 'ecosplay_referrals_stripe_disabled';
+    const TREMENDOUS_DISABLED_ERROR = 'ecosplay_referrals_tremendous_disabled';
 
     /**
      * Storage layer implementation.
@@ -1151,8 +1152,79 @@ class Ecosplay_Referrals_Service {
             return new WP_Error( 'ecosplay_referrals_wallet_forbidden', __( 'Accès refusé au portefeuille.', 'ecosplay-referrals' ) );
         }
 
-        if ( ! $this->is_stripe_enabled() ) {
-            return $this->stripe_disabled_error();
+        $referral = $this->store->get_referral_by_user( $user_id );
+
+        if ( ! $referral ) {
+            return new WP_Error( 'ecosplay_referrals_wallet_missing', __( 'Profil de parrainage introuvable.', 'ecosplay-referrals' ) );
+        }
+
+        $currency = apply_filters( 'ecosplay_referrals_wallet_currency', 'EUR', $referral, $this );
+        $limit    = (int) apply_filters( 'ecosplay_referrals_wallet_payout_limit', 10, $referral, $this );
+
+        $earned      = isset( $referral->earned_credits ) ? (float) $referral->earned_credits : 0.0;
+        $total_paid  = isset( $referral->total_paid ) ? (float) $referral->total_paid : 0.0;
+        $available   = max( 0, $earned - $total_paid );
+        $wallet_base = array(
+            'earned_credits'    => $earned,
+            'total_paid'        => $total_paid,
+            'available_balance' => $available,
+            'currency'          => $currency,
+            'payouts'           => $this->store->get_member_payouts( $user_id, max( 1, $limit ) ),
+            'association_label' => __( 'Associez votre compte Tremendous pour demander des récompenses.', 'ecosplay-referrals' ),
+            'association_status'=> 'unlinked',
+            'association_errors'=> array(),
+            'is_associated'     => false,
+            'can_request_reward'=> false,
+            'tremendous_balance'=> null,
+        );
+
+        if ( $this->is_tremendous_enabled() ) {
+            $state = $this->sync_tremendous_state( $referral );
+
+            if ( is_wp_error( $state ) ) {
+                return $state;
+            }
+
+            if ( null !== $state['balance'] ) {
+                $wallet_base['tremendous_balance'] = max( 0, (float) $state['balance'] );
+                $wallet_base['available_balance']   = min( $wallet_base['available_balance'], $wallet_base['tremendous_balance'] );
+            }
+
+            $wallet_base['association_label']  = $state['label'];
+            $wallet_base['association_status'] = $state['status'];
+            $wallet_base['association_errors'] = $state['errors'];
+            $wallet_base['is_associated']      = ! empty( $state['organization_id'] );
+            $wallet_base['can_request_reward'] = $this->is_tremendous_ready_status( $state['status'] );
+        } else {
+            if ( ! $this->is_stripe_enabled() ) {
+                $wallet_base['association_label']  = __( 'Aucune solution de récompense n’est disponible.', 'ecosplay-referrals' );
+                $wallet_base['association_errors'] = array();
+            } else {
+                $wallet_base['association_errors'] = array( __( 'Activez Tremendous pour permettre les récompenses.', 'ecosplay-referrals' ) );
+            }
+        }
+
+        $wallet_base['can_transfer'] = $wallet_base['can_request_reward'];
+
+        return $wallet_base;
+    }
+
+    /**
+     * Démarre ou vérifie l’association Tremendous pour un membre.
+     *
+     * @param int $user_id Identifiant du membre.
+     *
+     * @return array<string,mixed>|WP_Error
+     */
+    public function associate_tremendous_account( $user_id ) {
+        $user_id = (int) $user_id;
+
+        if ( $user_id <= 0 || ! $this->is_user_allowed( $user_id ) ) {
+            return new WP_Error( 'ecosplay_referrals_tremendous_forbidden', __( 'Accès refusé pour Tremendous.', 'ecosplay-referrals' ) );
+        }
+
+        if ( ! $this->is_tremendous_enabled() ) {
+            return $this->tremendous_disabled_error();
         }
 
         $referral = $this->store->get_referral_by_user( $user_id );
@@ -1161,47 +1233,215 @@ class Ecosplay_Referrals_Service {
             return new WP_Error( 'ecosplay_referrals_wallet_missing', __( 'Profil de parrainage introuvable.', 'ecosplay-referrals' ) );
         }
 
-        $capabilities = $this->decode_capabilities_field( isset( $referral->stripe_capabilities ) ? $referral->stripe_capabilities : '' );
-        $errors       = array();
-        $account      = null;
-
-        if ( ! empty( $referral->stripe_account_id ) ) {
-            if ( $this->stripe_client->is_configured() ) {
-                $account = $this->stripe_client->retrieve_account( $referral->stripe_account_id );
-
-                if ( is_wp_error( $account ) ) {
-                    $errors[] = $account->get_error_message();
-                } else {
-                    if ( isset( $account['capabilities'] ) && is_array( $account['capabilities'] ) ) {
-                        $capabilities = $account['capabilities'];
-                        $this->store->update_stripe_capabilities( (int) $referral->id, $capabilities );
-                    }
-
-                    $errors = array_merge( $errors, $this->extract_requirement_messages( $account ) );
-                }
-            } else {
-                $errors[] = __( 'La clé Stripe n\'est pas configurée.', 'ecosplay-referrals' );
+        if ( empty( $referral->tremendous_organization_id ) ) {
+            if ( ! $this->tremendous_client || ! $this->tremendous_client->is_configured() ) {
+                return new WP_Error( 'ecosplay_referrals_tremendous_unconfigured', __( 'Configurez l’accès Tremendous avant de poursuivre.', 'ecosplay-referrals' ) );
             }
+
+            $user = get_userdata( $user_id );
+
+            if ( ! $user ) {
+                return new WP_Error( 'ecosplay_referrals_missing_user', __( 'Utilisateur introuvable pour Tremendous.', 'ecosplay-referrals' ) );
+            }
+
+            $payload = array(
+                'name'        => $user->display_name ? $user->display_name : $user->user_login,
+                'email'       => $user->user_email,
+                'external_id' => (string) $referral->id,
+            );
+
+            $payload = apply_filters( 'ecosplay_referrals_tremendous_association_payload', $payload, $user_id, $referral, $this );
+
+            $response = $this->tremendous_client->create_connected_organization( $payload );
+
+            if ( is_wp_error( $response ) ) {
+                return $response;
+            }
+
+            $data = isset( $response['data'] ) && is_array( $response['data'] ) ? $response['data'] : $response;
+
+            $organization_id = isset( $data['id'] ) ? (string) $data['id'] : '';
+            $status          = isset( $data['status'] ) ? strtolower( (string) $data['status'] ) : 'pending';
+            $message         = '';
+
+            if ( isset( $data['status_reason'] ) ) {
+                $message = (string) $data['status_reason'];
+            } elseif ( isset( $data['status_message'] ) ) {
+                $message = (string) $data['status_message'];
+            }
+
+            if ( '' === $organization_id ) {
+                return new WP_Error( 'ecosplay_referrals_tremendous_missing_id', __( 'Tremendous n’a pas renvoyé d’identifiant d’association.', 'ecosplay-referrals' ) );
+            }
+
+            $this->store->save_tremendous_state(
+                $user_id,
+                array(
+                    'tremendous_organization_id' => $organization_id,
+                    'tremendous_status'          => $status,
+                    'tremendous_status_message'  => $message,
+                )
+            );
+
+            $referral = $this->store->get_referral_by_user( $user_id );
         }
 
-        $transfers_status = isset( $capabilities['transfers'] ) ? strtolower( (string) $capabilities['transfers'] ) : '';
-        $kyc              = $this->determine_kyc_state( $referral, $transfers_status, $account );
+        $state = $this->sync_tremendous_state( $referral );
 
-        $currency = apply_filters( 'ecosplay_referrals_wallet_currency', 'EUR', $referral, $this );
-        $limit    = (int) apply_filters( 'ecosplay_referrals_wallet_payout_limit', 10, $referral, $this );
+        if ( ! is_wp_error( $state ) ) {
+            do_action( 'ecosplay_referrals_tremendous_associated', $user_id, $state, $referral, $this );
+        }
 
-        return array(
-            'earned_credits'    => isset( $referral->earned_credits ) ? (float) $referral->earned_credits : 0.0,
-            'total_paid'        => isset( $referral->total_paid ) ? (float) $referral->total_paid : 0.0,
-            'available_balance' => max( 0, (float) $referral->earned_credits - (float) $referral->total_paid ),
-            'currency'          => $currency,
-            'kyc_label'         => $kyc['label'],
-            'kyc_status'        => $kyc['status'],
-            'kyc_errors'        => $errors,
-            'can_transfer'      => ( 'active' === $kyc['status'] ),
-            'has_account'       => ! empty( $referral->stripe_account_id ),
-            'payouts'           => $this->store->get_member_payouts( $user_id, max( 1, $limit ) ),
+        return $state;
+    }
+
+    /**
+     * Rafraîchit le statut Tremendous pour un membre.
+     *
+     * @param int $user_id Identifiant du membre.
+     *
+     * @return array<string,mixed>|WP_Error
+     */
+    public function refresh_tremendous_account( $user_id ) {
+        $user_id = (int) $user_id;
+
+        if ( $user_id <= 0 || ! $this->is_user_allowed( $user_id ) ) {
+            return new WP_Error( 'ecosplay_referrals_tremendous_forbidden', __( 'Accès refusé pour Tremendous.', 'ecosplay-referrals' ) );
+        }
+
+        if ( ! $this->is_tremendous_enabled() ) {
+            return $this->tremendous_disabled_error();
+        }
+
+        $referral = $this->store->get_referral_by_user( $user_id );
+
+        if ( ! $referral ) {
+            return new WP_Error( 'ecosplay_referrals_wallet_missing', __( 'Profil de parrainage introuvable.', 'ecosplay-referrals' ) );
+        }
+
+        return $this->sync_tremendous_state( $referral );
+    }
+
+    /**
+     * Soumet une demande de récompense Tremendous pour un membre.
+     *
+     * @param int                 $user_id  Identifiant du membre.
+     * @param float               $amount   Montant souhaité.
+     * @param array<string,mixed> $metadata Métadonnées additionnelles.
+     *
+     * @return array<string,mixed>|WP_Error
+     */
+    public function request_tremendous_reward( $user_id, $amount, array $metadata = array() ) {
+        $user_id = (int) $user_id;
+        $amount  = (float) $amount;
+
+        if ( $user_id <= 0 || ! $this->is_user_allowed( $user_id ) ) {
+            return new WP_Error( 'ecosplay_referrals_tremendous_forbidden', __( 'Accès refusé pour Tremendous.', 'ecosplay-referrals' ) );
+        }
+
+        if ( $amount <= 0 ) {
+            return new WP_Error( 'ecosplay_referrals_invalid_amount', __( 'Veuillez indiquer un montant valide.', 'ecosplay-referrals' ) );
+        }
+
+        if ( ! $this->is_tremendous_enabled() ) {
+            return $this->tremendous_disabled_error();
+        }
+
+        if ( ! $this->tremendous_client || ! $this->tremendous_client->is_configured() ) {
+            return new WP_Error( 'ecosplay_referrals_tremendous_unconfigured', __( 'Configurez l’accès Tremendous avant de poursuivre.', 'ecosplay-referrals' ) );
+        }
+
+        $referral = $this->store->get_referral_by_user( $user_id );
+
+        if ( ! $referral ) {
+            return new WP_Error( 'ecosplay_referrals_wallet_missing', __( 'Profil de parrainage introuvable.', 'ecosplay-referrals' ) );
+        }
+
+        $state = $this->sync_tremendous_state( $referral );
+
+        if ( is_wp_error( $state ) ) {
+            return $state;
+        }
+
+        if ( empty( $state['organization_id'] ) ) {
+            return new WP_Error( 'ecosplay_referrals_tremendous_unlinked', __( 'Associez votre compte Tremendous avant de demander une récompense.', 'ecosplay-referrals' ) );
+        }
+
+        if ( ! $this->is_tremendous_ready_status( $state['status'] ) ) {
+            return new WP_Error( 'ecosplay_referrals_tremendous_pending', __( 'Votre compte Tremendous doit être validé avant de demander une récompense.', 'ecosplay-referrals' ) );
+        }
+
+        $available_local = max( 0, (float) $referral->earned_credits - (float) $referral->total_paid );
+
+        if ( $amount > $available_local ) {
+            return new WP_Error( 'ecosplay_referrals_insufficient_balance', __( 'Le montant demandé dépasse votre solde disponible.', 'ecosplay-referrals' ) );
+        }
+
+        if ( null !== $state['balance'] && $amount > (float) $state['balance'] ) {
+            return new WP_Error( 'ecosplay_referrals_remote_balance', __( 'Le solde Tremendous disponible est insuffisant.', 'ecosplay-referrals' ) );
+        }
+
+        $user = get_userdata( $user_id );
+
+        if ( ! $user ) {
+            return new WP_Error( 'ecosplay_referrals_missing_user', __( 'Utilisateur introuvable pour Tremendous.', 'ecosplay-referrals' ) );
+        }
+
+        $currency = apply_filters( 'ecosplay_referrals_tremendous_currency', 'EUR', $referral, $this );
+
+        $order_payload = array(
+            'campaign_id' => $this->tremendous_client->get_campaign_id(),
+            'payment'     => array(
+                'amount'   => round( $amount, 2 ),
+                'currency' => strtoupper( $currency ),
+            ),
+            'recipients'  => array(
+                array(
+                    'name'       => $user->display_name ? $user->display_name : $user->user_login,
+                    'email'      => $user->user_email,
+                    'identifier' => (string) $referral->id,
+                ),
+            ),
         );
+
+        if ( ! empty( $metadata ) ) {
+            $order_payload['metadata'] = $metadata;
+        }
+
+        $order_payload = apply_filters( 'ecosplay_referrals_tremendous_order_payload', $order_payload, $user_id, $amount, $referral, $metadata, $this );
+
+        $response = $this->tremendous_client->create_order( $order_payload );
+
+        if ( is_wp_error( $response ) ) {
+            return $response;
+        }
+
+        $data     = isset( $response['data'] ) && is_array( $response['data'] ) ? $response['data'] : $response;
+        $order_id = isset( $data['id'] ) ? (string) $data['id'] : '';
+
+        $this->store->record_payout_event(
+            array(
+                'user_id'     => $user_id,
+                'referral_id' => (int) $referral->id,
+                'amount'      => $amount,
+                'currency'    => strtoupper( $currency ),
+                'status'      => 'requested',
+                'transfer_id' => $order_id,
+                'metadata'    => array_merge( array( 'provider' => 'tremendous' ), $metadata ),
+            )
+        );
+
+        $this->store->increment_total_paid( (int) $referral->id, $amount );
+
+        $updated_referral = $this->store->get_referral_by_user( $user_id );
+
+        if ( $updated_referral ) {
+            $this->sync_tremendous_state( $updated_referral );
+        }
+
+        do_action( 'ecosplay_referrals_tremendous_reward_requested', $user_id, $response, $amount, $currency, $metadata, $this );
+
+        return $response;
     }
 
     /**
@@ -1215,6 +1455,192 @@ class Ecosplay_Referrals_Service {
         $value = strtoupper( sanitize_text_field( (string) $value ) );
 
         return trim( $value );
+    }
+
+    /**
+     * Synchronise l’état Tremendous en interrogeant l’API distante.
+     *
+     * @param object $referral Enregistrement de parrainage.
+     *
+     * @return array<string,mixed>|WP_Error
+     */
+    protected function sync_tremendous_state( $referral ) {
+        if ( ! is_object( $referral ) || empty( $referral->user_id ) ) {
+            return new WP_Error( 'ecosplay_referrals_wallet_missing', __( 'Profil de parrainage introuvable.', 'ecosplay-referrals' ) );
+        }
+
+        $user_id        = (int) $referral->user_id;
+        $organization_id = isset( $referral->tremendous_organization_id ) ? (string) $referral->tremendous_organization_id : '';
+        $status         = isset( $referral->tremendous_status ) ? (string) $referral->tremendous_status : '';
+        $message        = isset( $referral->tremendous_status_message ) ? (string) $referral->tremendous_status_message : '';
+        $balance        = isset( $referral->tremendous_balance ) ? $referral->tremendous_balance : null;
+        $errors         = array();
+
+        if ( '' === $organization_id ) {
+            return array(
+                'status'          => 'unlinked',
+                'label'           => $this->format_tremendous_status_label( 'unlinked' ),
+                'errors'          => array(),
+                'balance'         => null,
+                'organization_id' => '',
+            );
+        }
+
+        if ( ! $this->tremendous_client || ! $this->tremendous_client->is_configured() ) {
+            if ( '' !== $message ) {
+                $errors[] = $message;
+            }
+            $errors[] = __( 'La clé Tremendous n’est pas configurée.', 'ecosplay-referrals' );
+
+            return array(
+                'status'          => $status ? $status : 'unconfigured',
+                'label'           => $this->format_tremendous_status_label( $status ? $status : 'unconfigured' ),
+                'errors'          => array_values( array_unique( array_filter( array_map( 'wp_strip_all_tags', $errors ) ) ) ),
+                'balance'         => is_numeric( $balance ) ? (float) $balance : null,
+                'organization_id' => $organization_id,
+            );
+        }
+
+        $details = $this->tremendous_client->get_connected_organization( $organization_id );
+
+        if ( is_wp_error( $details ) ) {
+            $error_message = wp_strip_all_tags( $details->get_error_message() );
+            $errors[]      = $error_message;
+            $this->store->save_tremendous_state( $user_id, array( 'tremendous_status_message' => $error_message ) );
+
+            $status = $status ? $status : 'error';
+
+            return array(
+                'status'          => $status,
+                'label'           => $this->format_tremendous_status_label( $status ),
+                'errors'          => array_values( array_unique( array_filter( array_map( 'wp_strip_all_tags', $errors ) ) ) ),
+                'balance'         => is_numeric( $balance ) ? (float) $balance : null,
+                'organization_id' => $organization_id,
+            );
+        }
+
+        $data   = isset( $details['data'] ) && is_array( $details['data'] ) ? $details['data'] : $details;
+        $status = isset( $data['status'] ) ? strtolower( (string) $data['status'] ) : 'pending';
+        $message = '';
+
+        if ( isset( $data['status_reason'] ) ) {
+            $message = (string) $data['status_reason'];
+        } elseif ( isset( $data['status_message'] ) ) {
+            $message = (string) $data['status_message'];
+        } elseif ( isset( $data['message'] ) ) {
+            $message = (string) $data['message'];
+        }
+
+        $this->store->save_tremendous_state(
+            $user_id,
+            array(
+                'tremendous_status'         => $status,
+                'tremendous_status_message' => $message,
+            )
+        );
+
+        $balance_response = $this->tremendous_client->fetch_balance();
+
+        if ( is_wp_error( $balance_response ) ) {
+            $errors[] = $balance_response->get_error_message();
+        } else {
+            $parsed_balance = $this->parse_tremendous_balance_response( $balance_response );
+
+            if ( null !== $parsed_balance ) {
+                $balance = $parsed_balance;
+                $this->store->save_tremendous_state( $user_id, array( 'tremendous_balance' => $balance ) );
+            }
+        }
+
+        if ( '' !== $message && ! $this->is_tremendous_ready_status( $status ) ) {
+            $errors[] = $message;
+        }
+
+        return array(
+            'status'          => $status,
+            'label'           => $this->format_tremendous_status_label( $status ),
+            'errors'          => array_values( array_unique( array_filter( array_map( 'wp_strip_all_tags', $errors ) ) ) ),
+            'balance'         => is_numeric( $balance ) ? (float) $balance : null,
+            'organization_id' => $organization_id,
+        );
+    }
+
+    /**
+     * Indique si le statut Tremendous autorise les récompenses.
+     *
+     * @param string $status Statut brut.
+     *
+     * @return bool
+     */
+    protected function is_tremendous_ready_status( $status ) {
+        $status = strtolower( (string) $status );
+
+        return in_array( $status, array( 'approved', 'active', 'registered' ), true );
+    }
+
+    /**
+     * Génère un libellé lisible pour le statut Tremendous.
+     *
+     * @param string $status Statut brut.
+     *
+     * @return string
+     */
+    protected function format_tremendous_status_label( $status ) {
+        switch ( strtolower( (string) $status ) ) {
+            case 'approved':
+            case 'active':
+            case 'registered':
+                return __( 'Votre compte Tremendous est validé.', 'ecosplay-referrals' );
+            case 'pending':
+            case 'review':
+            case 'submitted':
+                return __( 'Votre compte Tremendous est en cours de validation.', 'ecosplay-referrals' );
+            case 'unconfigured':
+                return __( 'Configurez Tremendous pour poursuivre.', 'ecosplay-referrals' );
+            case 'unlinked':
+                return __( 'Associez votre compte Tremendous pour demander des récompenses.', 'ecosplay-referrals' );
+            default:
+                return __( 'Le statut Tremendous nécessite une vérification.', 'ecosplay-referrals' );
+        }
+    }
+
+    /**
+     * Extrait un solde disponible depuis la réponse Tremendous.
+     *
+     * @param array<string,mixed> $response Réponse API brute.
+     *
+     * @return float|null
+     */
+    protected function parse_tremendous_balance_response( $response ) {
+        if ( isset( $response['data'] ) && is_array( $response['data'] ) ) {
+            $response = $response['data'];
+        }
+
+        if ( isset( $response['funding_sources'] ) && is_array( $response['funding_sources'] ) ) {
+            $response = $response['funding_sources'];
+        }
+
+        if ( isset( $response['available_balance'] ) ) {
+            return (float) $response['available_balance'];
+        }
+
+        if ( is_array( $response ) ) {
+            foreach ( $response as $entry ) {
+                if ( ! is_array( $entry ) ) {
+                    continue;
+                }
+
+                if ( isset( $entry['available_balance'] ) ) {
+                    return (float) $entry['available_balance'];
+                }
+
+                if ( isset( $entry['balance'] ) && is_array( $entry['balance'] ) && isset( $entry['balance']['available'] ) ) {
+                    return (float) $entry['balance']['available'];
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -1241,6 +1667,15 @@ class Ecosplay_Referrals_Service {
      */
     protected function stripe_disabled_error() {
         return new WP_Error( self::STRIPE_DISABLED_ERROR, __( 'L’intégration Stripe est désactivée.', 'ecosplay-referrals' ) );
+    }
+
+    /**
+     * Builds a standardized error when Tremendous has been disabled.
+     *
+     * @return WP_Error
+     */
+    protected function tremendous_disabled_error() {
+        return new WP_Error( self::TREMENDOUS_DISABLED_ERROR, __( 'L’intégration Tremendous est désactivée.', 'ecosplay-referrals' ) );
     }
 
     /**
