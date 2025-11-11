@@ -199,6 +199,7 @@ function ecosplay_referrals_boot() {
     $service = ecosplay_referrals_service();
 
     require_once ECOSPLAY_REFERRALS_INC . 'class-stripe-webhooks.php';
+    require_once ECOSPLAY_REFERRALS_INC . 'class-tremendous-webhooks.php';
 
     if ( is_admin() ) {
         require_once ECOSPLAY_REFERRALS_ADMIN . 'class-admin-settings.php';
@@ -208,6 +209,7 @@ function ecosplay_referrals_boot() {
         require_once ECOSPLAY_REFERRALS_ADMIN . 'class-admin-stats-page.php';
         require_once ECOSPLAY_REFERRALS_ADMIN . 'class-admin-payouts-page.php';
         require_once ECOSPLAY_REFERRALS_ADMIN . 'class-admin-stripe-logs-page.php';
+        require_once ECOSPLAY_REFERRALS_ADMIN . 'class-admin-tremendous-logs-page.php';
 
         $settings = new Ecosplay_Referrals_Admin_Settings( $service );
         new Ecosplay_Referrals_Admin_Menu( $service, $settings );
@@ -222,6 +224,10 @@ function ecosplay_referrals_boot() {
     if ( ecosplay_referrals_is_stripe_enabled() ) {
         new Ecosplay_Referrals_Member_Wallet( $service );
         new Ecosplay_Referrals_Stripe_Webhooks( ecosplay_referrals_store() );
+    }
+
+    if ( ecosplay_referrals_is_tremendous_enabled() ) {
+        new Ecosplay_Referrals_Tremendous_Webhooks( ecosplay_referrals_store() );
     }
 }
 

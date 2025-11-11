@@ -886,7 +886,7 @@ class Ecosplay_Referrals_Service {
     }
 
     /**
-     * Fetches webhook logs for the Stripe integration.
+     * Fetches webhook logs for a given provider.
      *
      * @param array<string,mixed> $filters Optional filters.
      *
@@ -899,10 +899,12 @@ class Ecosplay_Referrals_Service {
     /**
      * Returns the available webhook event types recorded.
      *
+     * @param string $provider Optional provider filter.
+     *
      * @return array<int,string>
      */
-    public function get_webhook_event_types() {
-        return $this->store->get_webhook_event_types();
+    public function get_webhook_event_types( $provider = '' ) {
+        return $this->store->get_webhook_event_types( $provider );
     }
 
     /**
@@ -2108,7 +2110,7 @@ class Ecosplay_Referrals_Service {
             $status_label             = 'error';
         }
 
-        $this->store->log_webhook_event( 'balance_alert', $status_label, $payload );
+        $this->store->log_webhook_event( 'balance_alert', $status_label, $payload, 'stripe' );
 
         $subject = sprintf(
             /* translators: %s: currency code. */
