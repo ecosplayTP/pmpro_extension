@@ -27,10 +27,12 @@ class Ecosplay_Referrals_Admin_Settings {
      * @var array<string,mixed>
      */
     protected $defaults = array(
-        'discount_amount' => Ecosplay_Referrals_Service::DISCOUNT_EUR,
-        'reward_amount'   => Ecosplay_Referrals_Service::REWARD_POINTS,
-        'allowed_levels'  => Ecosplay_Referrals_Service::DEFAULT_ALLOWED_LEVELS,
-        'notice_message'  => Ecosplay_Referrals_Service::DEFAULT_NOTICE_MESSAGE,
+        'discount_amount'      => Ecosplay_Referrals_Service::DISCOUNT_EUR,
+        'reward_amount'        => Ecosplay_Referrals_Service::REWARD_POINTS,
+        'allowed_levels'       => Ecosplay_Referrals_Service::DEFAULT_ALLOWED_LEVELS,
+        'notice_message'       => Ecosplay_Referrals_Service::DEFAULT_NOTICE_MESSAGE,
+        'stripe_secret_key'    => '',
+        'stripe_secret_exists' => false,
     );
 
     /**
@@ -47,6 +49,8 @@ class Ecosplay_Referrals_Admin_Settings {
      */
     public function __construct( Ecosplay_Referrals_Service $service ) {
         $this->service = $service;
+
+        $this->ensure_option_not_autoloaded();
 
         add_action( 'admin_init', array( $this, 'register_settings' ) );
         add_filter( 'ecosplay_referrals_discount_amount', array( $this, 'filter_discount' ) );
@@ -140,6 +144,21 @@ class Ecosplay_Referrals_Admin_Settings {
             'ecosplay_referrals',
             'ecos_referrals_notice'
         );
+
+        add_settings_section(
+            'ecos_referrals_stripe',
+            __( 'Stripe', 'ecosplay-referrals' ),
+            '__return_false',
+            'ecosplay_referrals'
+        );
+
+        add_settings_field(
+            'ecos_referrals_stripe_secret_key',
+            __( 'Clé secrète Stripe', 'ecosplay-referrals' ),
+            array( $this, 'render_stripe_secret_field' ),
+            'ecosplay_referrals',
+            'ecos_referrals_stripe'
+        );
     }
 
     /**
@@ -156,11 +175,28 @@ class Ecosplay_Referrals_Admin_Settings {
         $reward   = isset( $input['reward_amount'] ) ? $this->sanitize_amount( $input['reward_amount'] ) : $this->defaults['reward_amount'];
         $levels   = isset( $input['allowed_levels'] ) ? $this->sanitize_allowed_levels( $input['allowed_levels'] ) : $this->defaults['allowed_levels'];
         $message  = isset( $input['notice_message'] ) ? $this->sanitize_notice_message( $input['notice_message'] ) : $this->defaults['notice_message'];
+        $secret   = isset( $input['stripe_secret_key'] ) ? $this->sanitize_stripe_secret( $input['stripe_secret_key'] ) : null;
 
         $sanitized['discount_amount'] = $discount;
         $sanitized['reward_amount']   = $reward;
         $sanitized['allowed_levels']  = $levels;
         $sanitized['notice_message']  = $message;
+
+        if ( null !== $secret ) {
+            $sanitized['stripe_secret_key'] = $secret['cipher'];
+            $sanitized['stripe_secret_exists'] = $secret['exists'];
+        } else {
+            $stored = get_option( $this->option_name, array() );
+
+            if ( is_array( $stored ) && array_key_exists( 'stripe_secret_key', $stored ) ) {
+                $sanitized['stripe_secret_key']    = (string) $stored['stripe_secret_key'];
+                $sanitized['stripe_secret_exists'] = ! empty( $stored['stripe_secret_key'] );
+            }
+        }
+
+        if ( ! isset( $sanitized['stripe_secret_exists'] ) ) {
+            $sanitized['stripe_secret_exists'] = false;
+        }
 
         add_settings_error( 'ecosplay_referrals', 'settings_saved', __( 'Réglages enregistrés.', 'ecosplay-referrals' ), 'updated' );
 
@@ -327,7 +363,17 @@ class Ecosplay_Referrals_Admin_Settings {
             $stored = array();
         }
 
-        return array_merge( $this->defaults, $stored );
+        $merged = array_merge( $this->defaults, $stored );
+
+        if ( ! empty( $merged['stripe_secret_key'] ) ) {
+            $merged['stripe_secret_exists'] = true;
+            $merged['stripe_secret_key']    = '';
+        } else {
+            $merged['stripe_secret_exists'] = false;
+            $merged['stripe_secret_key']    = '';
+        }
+
+        return $merged;
     }
 
     /**
@@ -394,5 +440,83 @@ class Ecosplay_Referrals_Admin_Settings {
         }
 
         return $message;
+    }
+
+    /**
+     * Encrypts the Stripe secret value while preserving existing storage.
+     *
+     * @param string $value Raw secret submitted.
+     *
+     * @return array{cipher:string,exists:bool}|null
+     */
+    protected function sanitize_stripe_secret( $value ) {
+        $submitted = trim( (string) $value );
+
+        if ( '' === $submitted ) {
+            $stored = get_option( $this->option_name, array() );
+
+            if ( is_array( $stored ) && ! empty( $stored['stripe_secret_key'] ) ) {
+                return array(
+                    'cipher' => (string) $stored['stripe_secret_key'],
+                    'exists' => true,
+                );
+            }
+
+            return array(
+                'cipher' => '',
+                'exists' => false,
+            );
+        }
+
+        $cipher = Ecosplay_Referrals_Stripe_Secrets::encrypt( $submitted );
+
+        if ( '' === $cipher ) {
+            add_settings_error( 'ecosplay_referrals', 'stripe_secret_error', __( 'La clé Stripe n’a pas pu être chiffrée.', 'ecosplay-referrals' ), 'error' );
+
+            return null;
+        }
+
+        return array(
+            'cipher' => $cipher,
+            'exists' => true,
+        );
+    }
+
+    /**
+     * Outputs the Stripe secret input while keeping it masked.
+     *
+     * @return void
+     */
+    public function render_stripe_secret_field() {
+        $options      = $this->get_options();
+        $has_existing = ! empty( $options['stripe_secret_exists'] );
+
+        printf(
+            '<input type="password" class="regular-text" name="%1$s[stripe_secret_key]" value="" autocomplete="off" placeholder="sk_live_********" />',
+            esc_attr( $this->option_name )
+        );
+
+        if ( $has_existing ) {
+            echo '<p class="description">' . esc_html__( 'Une clé est déjà enregistrée. Laissez vide pour la conserver.', 'ecosplay-referrals' ) . '</p>';
+        } else {
+            echo '<p class="description">' . esc_html__( 'Saisissez la clé secrète Stripe à chiffrer et stocker.', 'ecosplay-referrals' ) . '</p>';
+        }
+    }
+
+    /**
+     * Forces the option to be stored without autoload.
+     *
+     * @return void
+     */
+    protected function ensure_option_not_autoloaded() {
+        $sentinel = new stdClass();
+        $value    = get_option( $this->option_name, $sentinel );
+
+        if ( $sentinel === $value ) {
+            add_option( $this->option_name, array(), '', 'no' );
+            return;
+        }
+
+        update_option( $this->option_name, $value, false );
     }
 }

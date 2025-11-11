@@ -132,6 +132,8 @@ register_deactivation_hook( __FILE__, 'ecosplay_referrals_deactivate' );
 function ecosplay_referrals_boot() {
     $service = ecosplay_referrals_service();
 
+    require_once ECOSPLAY_REFERRALS_INC . 'class-stripe-secrets.php';
+
     if ( is_admin() ) {
         require_once ECOSPLAY_REFERRALS_ADMIN . 'class-admin-settings.php';
         require_once ECOSPLAY_REFERRALS_ADMIN . 'class-admin-menu.php';
