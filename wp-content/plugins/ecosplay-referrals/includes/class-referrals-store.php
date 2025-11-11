@@ -92,6 +92,10 @@ class Ecosplay_Referrals_Store {
             last_regenerated_at DATETIME NULL,
             stripe_account_id VARCHAR(64) NULL,
             stripe_capabilities LONGTEXT NULL,
+            tremendous_organization_id VARCHAR(64) NULL,
+            tremendous_status VARCHAR(32) NULL,
+            tremendous_status_message VARCHAR(255) NULL,
+            tremendous_balance DECIMAL(10,2) NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NULL,
             UNIQUE KEY code (code),
@@ -178,6 +182,10 @@ class Ecosplay_Referrals_Store {
         $this->maybe_add_referral_column( 'stripe_account_id', 'VARCHAR(64) NULL' );
         $this->maybe_add_referral_column( 'stripe_capabilities', 'LONGTEXT NULL' );
         $this->maybe_add_referral_column( 'total_paid', "DECIMAL(10,2) NOT NULL DEFAULT 0" );
+        $this->maybe_add_referral_column( 'tremendous_organization_id', 'VARCHAR(64) NULL' );
+        $this->maybe_add_referral_column( 'tremendous_status', 'VARCHAR(32) NULL' );
+        $this->maybe_add_referral_column( 'tremendous_status_message', 'VARCHAR(255) NULL' );
+        $this->maybe_add_referral_column( 'tremendous_balance', 'DECIMAL(10,2) NULL' );
     }
 
     /**
@@ -217,7 +225,7 @@ class Ecosplay_Referrals_Store {
     public function get_active_codes( $only_available = true ) {
         global $wpdb;
 
-        $sql = "SELECT id, user_id, code, earned_credits, total_paid, stripe_account_id, stripe_capabilities, is_active, created_at, updated_at
+        $sql = "SELECT id, user_id, code, earned_credits, total_paid, stripe_account_id, stripe_capabilities, tremendous_organization_id, tremendous_status, tremendous_status_message, tremendous_balance, is_active, created_at, updated_at
             FROM {$this->referrals_table()}";
 
         if ( $only_available ) {
@@ -249,6 +257,10 @@ class Ecosplay_Referrals_Store {
                 u.user_email,
                 r.stripe_account_id,
                 r.stripe_capabilities,
+                r.tremendous_organization_id,
+                r.tremendous_status,
+                r.tremendous_status_message,
+                r.tremendous_balance,
                 r.earned_credits,
                 r.total_paid,
                 COALESCE(r.earned_credits - r.total_paid, 0) AS balance,
@@ -311,7 +323,7 @@ class Ecosplay_Referrals_Store {
 
         return $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id, user_id, code, earned_credits, total_paid, stripe_account_id, stripe_capabilities, is_active, notification_state, last_regenerated_at, created_at, updated_at
+                "SELECT id, user_id, code, earned_credits, total_paid, stripe_account_id, stripe_capabilities, tremendous_organization_id, tremendous_status, tremendous_status_message, tremendous_balance, is_active, notification_state, last_regenerated_at, created_at, updated_at
                  FROM {$this->referrals_table()} WHERE user_id = %d",
                 $user_id
             )
@@ -330,7 +342,7 @@ class Ecosplay_Referrals_Store {
 
         return $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id, user_id, code, earned_credits, total_paid, stripe_account_id, stripe_capabilities, is_active, notification_state, last_regenerated_at, created_at, updated_at
+                "SELECT id, user_id, code, earned_credits, total_paid, stripe_account_id, stripe_capabilities, tremendous_organization_id, tremendous_status, tremendous_status_message, tremendous_balance, is_active, notification_state, last_regenerated_at, created_at, updated_at
                  FROM {$this->referrals_table()} WHERE code = %s",
                 $code
             )
@@ -569,6 +581,75 @@ class Ecosplay_Referrals_Store {
     }
 
     /**
+     * Persists Tremendous connection state for the specified user.
+     *
+     * @param int                 $user_id Target user identifier.
+     * @param array<string,mixed> $data    Association details.
+     *
+     * @return bool
+     */
+    public function save_tremendous_state( $user_id, array $data ) {
+        global $wpdb;
+
+        $user_id = (int) $user_id;
+
+        if ( $user_id <= 0 ) {
+            return false;
+        }
+
+        $allowed = array(
+            'tremendous_organization_id' => '%s',
+            'tremendous_status'          => '%s',
+            'tremendous_status_message'  => '%s',
+            'tremendous_balance'         => '%f',
+        );
+
+        $update = array();
+        $format = array();
+
+        foreach ( $allowed as $column => $column_format ) {
+            if ( ! array_key_exists( $column, $data ) ) {
+                continue;
+            }
+
+            $value = $data[ $column ];
+
+            switch ( $column ) {
+                case 'tremendous_organization_id':
+                    $value = substr( sanitize_text_field( (string) $value ), 0, 64 );
+                    break;
+                case 'tremendous_status':
+                    $value = substr( sanitize_text_field( strtolower( (string) $value ) ), 0, 32 );
+                    break;
+                case 'tremendous_status_message':
+                    $value = substr( wp_strip_all_tags( (string) $value ), 0, 255 );
+                    break;
+                case 'tremendous_balance':
+                    $value = (float) $value;
+                    break;
+            }
+
+            $update[ $column ] = $value;
+            $format[]          = $column_format;
+        }
+
+        if ( empty( $update ) ) {
+            return false;
+        }
+
+        $update['updated_at'] = current_time( 'mysql' );
+        $format[]             = '%s';
+
+        return false !== $wpdb->update(
+            $this->referrals_table(),
+            $update,
+            array( 'user_id' => $user_id ),
+            $format,
+            array( '%d' )
+        );
+    }
+
+    /**
      * Updates only the stored capabilities for a referral entry.
      *
      * @param int   $referral_id Referral identifier.
@@ -617,7 +698,7 @@ class Ecosplay_Referrals_Store {
 
         return $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id, user_id, code, earned_credits, total_paid, stripe_account_id, stripe_capabilities, is_active, notification_state, last_regenerated_at, created_at, updated_at
+                "SELECT id, user_id, code, earned_credits, total_paid, stripe_account_id, stripe_capabilities, tremendous_organization_id, tremendous_status, tremendous_status_message, tremendous_balance, is_active, notification_state, last_regenerated_at, created_at, updated_at
                  FROM {$this->referrals_table()} WHERE stripe_account_id = %s",
                 $account_id
             )

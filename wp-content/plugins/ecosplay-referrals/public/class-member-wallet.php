@@ -40,13 +40,13 @@ class Ecosplay_Referrals_Member_Wallet {
         add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
         add_action( 'wp', array( $this, 'maybe_flag_shortcode' ) );
 
-        add_action( 'wp_ajax_ecos_referrals_wallet_onboarding', array( $this, 'handle_onboarding_request' ) );
-        add_action( 'wp_ajax_ecos_referrals_wallet_dashboard', array( $this, 'handle_dashboard_request' ) );
-        add_action( 'wp_ajax_ecos_referrals_request_transfer', array( $this, 'handle_transfer_request' ) );
+        add_action( 'wp_ajax_ecos_referrals_wallet_associate', array( $this, 'handle_association_request' ) );
+        add_action( 'wp_ajax_ecos_referrals_request_reward', array( $this, 'handle_reward_request' ) );
+        add_action( 'wp_ajax_ecos_referrals_wallet_refresh', array( $this, 'handle_refresh_request' ) );
 
-        add_action( 'wp_ajax_nopriv_ecos_referrals_wallet_onboarding', array( $this, 'reject_unauthenticated_request' ) );
-        add_action( 'wp_ajax_nopriv_ecos_referrals_wallet_dashboard', array( $this, 'reject_unauthenticated_request' ) );
-        add_action( 'wp_ajax_nopriv_ecos_referrals_request_transfer', array( $this, 'reject_unauthenticated_request' ) );
+        add_action( 'wp_ajax_nopriv_ecos_referrals_wallet_associate', array( $this, 'reject_unauthenticated_request' ) );
+        add_action( 'wp_ajax_nopriv_ecos_referrals_request_reward', array( $this, 'reject_unauthenticated_request' ) );
+        add_action( 'wp_ajax_nopriv_ecos_referrals_wallet_refresh', array( $this, 'reject_unauthenticated_request' ) );
     }
 
     /**
@@ -78,7 +78,7 @@ class Ecosplay_Referrals_Member_Wallet {
 
         ob_start();
         ?>
-        <div class="ecos-referral-wallet" data-wallet-can-transfer="<?php echo esc_attr( $payload['can_transfer'] ? '1' : '0' ); ?>">
+        <div class="ecos-referral-wallet" data-wallet-can-request="<?php echo esc_attr( $payload['can_request_reward'] ? '1' : '0' ); ?>" data-wallet-association-status="<?php echo esc_attr( $payload['association_status'] ); ?>" data-wallet-tremendous-balance="<?php echo esc_attr( $payload['tremendous_balance_formatted'] ); ?>">
             <div class="ecos-referral-wallet__notice" role="alert"></div>
 
             <div class="ecos-referral-wallet__summary">
@@ -96,29 +96,28 @@ class Ecosplay_Referrals_Member_Wallet {
                 </div>
             </div>
 
-            <div class="ecos-referral-wallet__kyc">
-                <h4><?php esc_html_e( 'Statut KYC', 'ecosplay-referrals' ); ?></h4>
-                <p data-wallet-field="kyc_label"><?php echo esc_html( $payload['kyc_label'] ); ?></p>
-                <?php if ( ! empty( $payload['kyc_errors'] ) ) : ?>
-                    <ul class="ecos-referral-wallet__kyc-errors">
-                        <?php foreach ( $payload['kyc_errors'] as $error ) : ?>
-                            <li><?php echo esc_html( $error ); ?></li>
-                        <?php endforeach; ?>
-                    </ul>
-                <?php endif; ?>
+            <div class="ecos-referral-wallet__association">
+                <h4><?php esc_html_e( 'Compte Tremendous', 'ecosplay-referrals' ); ?></h4>
+                <p data-wallet-field="association_label"><?php echo esc_html( $payload['association_label'] ); ?></p>
+                <p class="ecos-referral-wallet__tremendous-balance" data-wallet-field="tremendous_balance_label" style="<?php echo '' === $payload['tremendous_balance_label'] ? 'display:none;' : ''; ?>"><?php echo esc_html( $payload['tremendous_balance_label'] ); ?></p>
+                <ul class="ecos-referral-wallet__association-errors" data-wallet-field="association_errors" style="<?php echo empty( $payload['association_errors'] ) ? 'display:none;' : ''; ?>">
+                    <?php foreach ( $payload['association_errors'] as $error ) : ?>
+                        <li><?php echo esc_html( $error ); ?></li>
+                    <?php endforeach; ?>
+                </ul>
             </div>
 
             <div class="ecos-referral-wallet__actions">
-                <button class="button" data-wallet-action="onboard" type="button"><?php esc_html_e( 'Compléter mon dossier', 'ecosplay-referrals' ); ?></button>
-                <button class="button" data-wallet-action="dashboard" type="button" style="<?php echo $payload['can_transfer'] ? '' : 'display:none;'; ?>"><?php esc_html_e( 'Ouvrir mon tableau de bord Stripe', 'ecosplay-referrals' ); ?></button>
+                <button class="button" data-wallet-action="associate" type="button" style="<?php echo $payload['is_associated'] ? 'display:none;' : ''; ?>"><?php esc_html_e( 'Associer mon compte Tremendous', 'ecosplay-referrals' ); ?></button>
+                <button class="button" data-wallet-action="refresh" type="button" style="<?php echo $payload['is_associated'] ? '' : 'display:none;'; ?>"><?php esc_html_e( 'Rafraîchir mon solde Tremendous', 'ecosplay-referrals' ); ?></button>
             </div>
 
-            <div data-wallet-section="transfer" style="<?php echo $payload['can_transfer'] ? '' : 'display:none;'; ?>">
-                <form class="ecos-referral-wallet__transfer" data-wallet-form="transfer">
-                    <label for="ecos-referral-wallet-amount"><?php esc_html_e( 'Montant du virement', 'ecosplay-referrals' ); ?></label>
+            <div data-wallet-section="reward" style="<?php echo $payload['can_request_reward'] ? '' : 'display:none;'; ?>">
+                <form class="ecos-referral-wallet__transfer" data-wallet-form="reward">
+                    <label for="ecos-referral-wallet-amount"><?php esc_html_e( 'Montant de la récompense', 'ecosplay-referrals' ); ?></label>
                     <input id="ecos-referral-wallet-amount" type="number" step="0.01" min="1" name="amount" required />
                     <p class="ecos-referral-wallet__hint" data-wallet-field="available_hint"><?php echo esc_html( $payload['available_hint'] ); ?></p>
-                    <button type="submit" class="button" data-wallet-action="transfer"><?php esc_html_e( 'Demander un virement', 'ecosplay-referrals' ); ?></button>
+                    <button type="submit" class="button" data-wallet-action="reward"><?php esc_html_e( 'Demander une récompense', 'ecosplay-referrals' ); ?></button>
                 </form>
             </div>
 
@@ -188,13 +187,15 @@ class Ecosplay_Referrals_Member_Wallet {
                 'ajaxUrl' => admin_url( 'admin-ajax.php' ),
                 'nonce'   => wp_create_nonce( 'ecos_referral_wallet' ),
                 'actions' => array(
-                    'onboard'  => 'ecos_referrals_wallet_onboarding',
-                    'dashboard'=> 'ecos_referrals_wallet_dashboard',
-                    'transfer' => 'ecos_referrals_request_transfer',
+                    'associate' => 'ecos_referrals_wallet_associate',
+                    'reward'    => 'ecos_referrals_request_reward',
+                    'refresh'   => 'ecos_referrals_wallet_refresh',
                 ),
                 'i18n'    => array(
                     'genericError'      => __( 'Une erreur est survenue. Veuillez réessayer.', 'ecosplay-referrals' ),
-                    'transferRequested' => __( 'Votre demande de virement a été enregistrée.', 'ecosplay-referrals' ),
+                    'rewardRequested'   => __( 'Votre demande de récompense a été enregistrée.', 'ecosplay-referrals' ),
+                    'associationLinked' => __( 'Votre compte Tremendous est désormais associé.', 'ecosplay-referrals' ),
+                    'balanceRefreshed'  => __( 'Le solde Tremendous a été actualisé.', 'ecosplay-referrals' ),
                     'emptyLedger'       => __( 'Aucun virement enregistré pour le moment.', 'ecosplay-referrals' ),
                     'availableHint'     => __( 'Solde disponible : %s', 'ecosplay-referrals' ),
                 ),
@@ -228,11 +229,11 @@ class Ecosplay_Referrals_Member_Wallet {
     }
 
     /**
-     * Traite la demande de génération d\'un lien d\'onboarding.
+     * Traite la demande d'association au programme Tremendous.
      *
      * @return void
      */
-    public function handle_onboarding_request() {
+    public function handle_association_request() {
         $user_id = $this->resolve_authorized_user( true );
 
         if ( ! $user_id ) {
@@ -241,42 +242,34 @@ class Ecosplay_Referrals_Member_Wallet {
 
         check_ajax_referer( 'ecos_referral_wallet' );
 
-        $redirect = isset( $_POST['redirect'] ) ? esc_url_raw( wp_unslash( $_POST['redirect'] ) ) : home_url();
-        $link     = $this->service->generate_account_link( $user_id, $redirect, $redirect );
+        $result = $this->service->associate_tremendous_account( $user_id );
 
-        if ( is_wp_error( $link ) ) {
+        if ( is_wp_error( $result ) ) {
             wp_send_json_error(
                 array(
-                    'message' => $link->get_error_message(),
+                    'message' => $result->get_error_message(),
                 ),
                 400
             );
         }
 
-        $url = isset( $link['url'] ) ? esc_url_raw( $link['url'] ) : '';
-
-        if ( '' === $url ) {
-            wp_send_json_error(
-                array(
-                    'message' => __( 'Le lien de redirection Stripe est introuvable.', 'ecosplay-referrals' ),
-                ),
-                400
-            );
-        }
+        $wallet  = $this->service->get_member_wallet( $user_id );
+        $payload = is_wp_error( $wallet ) ? array() : $this->prepare_wallet_payload( $wallet );
 
         wp_send_json_success(
             array(
-                'redirect' => $url,
+                'message' => __( 'Votre compte Tremendous est désormais associé.', 'ecosplay-referrals' ),
+                'wallet'  => $payload,
             )
         );
     }
 
     /**
-     * Traite la demande d\'accès au tableau de bord Stripe.
+     * Rafraîchit le solde et le statut Tremendous pour le membre courant.
      *
      * @return void
      */
-    public function handle_dashboard_request() {
+    public function handle_refresh_request() {
         $user_id = $this->resolve_authorized_user( true );
 
         if ( ! $user_id ) {
@@ -285,41 +278,34 @@ class Ecosplay_Referrals_Member_Wallet {
 
         check_ajax_referer( 'ecos_referral_wallet' );
 
-        $link = $this->service->generate_login_link( $user_id );
+        $result = $this->service->refresh_tremendous_account( $user_id );
 
-        if ( is_wp_error( $link ) ) {
+        if ( is_wp_error( $result ) ) {
             wp_send_json_error(
                 array(
-                    'message' => $link->get_error_message(),
+                    'message' => $result->get_error_message(),
                 ),
                 400
             );
         }
 
-        $url = isset( $link['url'] ) ? esc_url_raw( $link['url'] ) : '';
-
-        if ( '' === $url ) {
-            wp_send_json_error(
-                array(
-                    'message' => __( 'Impossible de générer le lien de connexion Stripe.', 'ecosplay-referrals' ),
-                ),
-                400
-            );
-        }
+        $wallet  = $this->service->get_member_wallet( $user_id );
+        $payload = is_wp_error( $wallet ) ? array() : $this->prepare_wallet_payload( $wallet );
 
         wp_send_json_success(
             array(
-                'redirect' => $url,
+                'message' => __( 'Le solde Tremendous a été actualisé.', 'ecosplay-referrals' ),
+                'wallet'  => $payload,
             )
         );
     }
 
     /**
-     * Traite la demande de virement depuis l\'interface membre.
+     * Traite la demande de récompense Tremendous depuis l\'interface membre.
      *
      * @return void
      */
-    public function handle_transfer_request() {
+    public function handle_reward_request() {
         $user_id = $this->resolve_authorized_user( true );
 
         if ( ! $user_id ) {
@@ -334,42 +320,13 @@ class Ecosplay_Referrals_Member_Wallet {
         if ( $amount <= 0 ) {
             wp_send_json_error(
                 array(
-                    'message' => __( 'Veuillez indiquer un montant de virement valide.', 'ecosplay-referrals' ),
+                    'message' => __( 'Veuillez indiquer un montant de récompense valide.', 'ecosplay-referrals' ),
                 ),
                 400
             );
         }
 
-        $wallet = $this->service->get_member_wallet( $user_id );
-
-        if ( is_wp_error( $wallet ) ) {
-            wp_send_json_error(
-                array(
-                    'message' => $wallet->get_error_message(),
-                ),
-                400
-            );
-        }
-
-        if ( empty( $wallet['can_transfer'] ) ) {
-            wp_send_json_error(
-                array(
-                    'message' => __( 'Votre compte Stripe doit être validé avant de demander un virement.', 'ecosplay-referrals' ),
-                ),
-                400
-            );
-        }
-
-        if ( $amount > (float) $wallet['available_balance'] ) {
-            wp_send_json_error(
-                array(
-                    'message' => __( 'Le montant demandé dépasse votre solde disponible.', 'ecosplay-referrals' ),
-                ),
-                400
-            );
-        }
-
-        $result = $this->service->handle_withdraw_request( $user_id, $amount );
+        $result = $this->service->request_tremendous_reward( $user_id, $amount );
 
         if ( is_wp_error( $result ) ) {
             wp_send_json_error(
@@ -380,12 +337,12 @@ class Ecosplay_Referrals_Member_Wallet {
             );
         }
 
-        $updated_wallet = $this->service->get_member_wallet( $user_id );
-        $payload        = is_wp_error( $updated_wallet ) ? array() : $this->prepare_wallet_payload( $updated_wallet );
+        $wallet  = $this->service->get_member_wallet( $user_id );
+        $payload = is_wp_error( $wallet ) ? array() : $this->prepare_wallet_payload( $wallet );
 
         wp_send_json_success(
             array(
-                'message' => __( 'Votre demande de virement a été enregistrée.', 'ecosplay-referrals' ),
+                'message' => __( 'Votre demande de récompense a été enregistrée.', 'ecosplay-referrals' ),
                 'wallet'  => $payload,
             )
         );
@@ -431,6 +388,8 @@ class Ecosplay_Referrals_Member_Wallet {
             return sprintf( '%s %s', number_format_i18n( (float) $amount, 2 ), $currency );
         };
 
+        $tremendous_balance = isset( $wallet['tremendous_balance'] ) && null !== $wallet['tremendous_balance'] ? (float) $wallet['tremendous_balance'] : null;
+
         $payload = array(
             'currency'                    => $currency,
             'earned_credits'              => (float) $wallet['earned_credits'],
@@ -440,10 +399,17 @@ class Ecosplay_Referrals_Member_Wallet {
             'available_balance'           => (float) $wallet['available_balance'],
             'available_balance_formatted' => $format( $wallet['available_balance'] ),
             'available_hint'              => sprintf( __( 'Solde disponible : %s', 'ecosplay-referrals' ), $format( $wallet['available_balance'] ) ),
-            'kyc_label'                   => (string) $wallet['kyc_label'],
-            'kyc_errors'                  => array_map( 'wp_strip_all_tags', (array) $wallet['kyc_errors'] ),
-            'can_transfer'                => ! empty( $wallet['can_transfer'] ),
+            'association_label'           => isset( $wallet['association_label'] ) ? (string) $wallet['association_label'] : '',
+            'association_errors'          => array_map( 'wp_strip_all_tags', isset( $wallet['association_errors'] ) ? (array) $wallet['association_errors'] : array() ),
+            'association_status'          => isset( $wallet['association_status'] ) ? (string) $wallet['association_status'] : '',
+            'can_request_reward'          => ! empty( $wallet['can_request_reward'] ),
+            'is_associated'               => ! empty( $wallet['is_associated'] ),
+            'tremendous_balance'          => $tremendous_balance,
+            'tremendous_balance_formatted'=> null === $tremendous_balance ? '' : $format( $tremendous_balance ),
+            'tremendous_balance_label'    => null === $tremendous_balance ? '' : sprintf( __( 'Solde Tremendous disponible : %s', 'ecosplay-referrals' ), $format( $tremendous_balance ) ),
         );
+
+        $payload['can_transfer'] = isset( $wallet['can_transfer'] ) ? ! empty( $wallet['can_transfer'] ) : $payload['can_request_reward'];
 
         $payload['payouts'] = array();
 
