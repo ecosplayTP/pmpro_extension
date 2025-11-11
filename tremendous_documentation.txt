@@ -1,0 +1,152 @@
+Ici ce trouve des exemples de codes et documentations pour l'utilisation de tremendous pour récompenser les parrains : 
+
+Environment	URL	API Key prefix
+Sandbox	testflight.tremendous.com	TEST_
+Production	api.tremendous.com	PROD_
+
+Let’s send a test $50.00 reward. Run the cURL command below, replacing both YOUR-API-KEY and EMAIL-ADDRESS:
+cURL
+curl --url 'https://testflight.tremendous.com/api/v2/orders' \
+     --header 'Authorization: Bearer YOUR-API-KEY' \
+     --header 'Content-Type: application/json' \
+     --data '
+{
+  "payment": {
+    "funding_source_id": "BALANCE"
+  },
+  "reward": {
+    "value": {
+      "denomination": 50,
+      "currency_code": "USD"
+    },
+    "delivery": {
+      "method": "EMAIL"
+    },
+    "recipient": {
+      "name": "Jane Doe",
+      "email": "EMAIL-ADDRESS@example.com"
+    },
+    "products": [
+      "OKMHM2X2OHYV",
+      "KV934TZ93NQM",
+      "ET0ZVETV5ILN",
+      "Q24BD9EZ332JT",
+      "TBAJH7YLFVS5"
+    ]
+  }
+}
+'
+
+
+Create a reward via the API
+You’ll pass in the campaign_id into the rewards object as follows:cURL
+curl --url 'https://testflight.tremendous.com/api/v2/orders' \
+     --header 'Authorization: Bearer YOUR-API-KEY' \
+     --header 'Content-Type: application/json' \
+     --data '
+{
+  "payment": {
+    "funding_source_id": "BALANCE"
+  },
+  "reward": {
+    "campaign_id": "YOUR-CAMPAIGN-ID-HERE",
+    "value": {
+      "denomination": 50,
+      "currency_code": "EUR"
+    },
+    "delivery": {
+      "method": "EMAIL"
+    },
+    "recipient": {
+      "name": "Jane Doe",
+      "email": "recipient@example.com"
+    }
+  }
+}
+'
+
+Il faudra donc que l'interface admin avec tremendous intègre une zome pour renseigner un "campaign_id"
+
+The vast majority of API orders use balance as the funding source. To pay for an order with your balance, you can simply use balance as the funding_source_id in the order request.
+To use a different funding source to pay for an order, you can query the Funding sources resource to find the ID of the funding source:
+
+cURL
+
+curl --url 'https://testflight.tremendous.com/api/v2/funding_sources' \
+     --header 'Authorization: Bearer YOUR-API-KEY'
+JSON
+
+{
+  "funding_sources": [
+    {
+      "method": "balance",
+      "id": "GCTHLCMFVYMD",
+      "usage_permissions": [
+        "api_orders", 
+        "dashboard_orders"
+      ],
+      "status": "active",
+      "meta": {
+        "available_cents": 600000,
+        "pending_cents": 0
+      }
+    },
+    {
+      "method": "invoice",
+      "usage_permissions": [
+        "api_orders"
+      ],
+      "status": "active",
+      "type": "COMMERCIAL",
+      "id": "4G1IPSQINMMV"
+    }
+  ]
+}
+
+Topups represent transactions that add funds to your Tremendous account balance from a saved bank account or credit card. These transactions are initiated with an API request.
+
+To use topups, first add a bank account or credit card to your Tremendous account in the dashboard.
+
+Ensure that your chosen funding source has balance_funding in the usage_permissions field. This means it can be used to create topups:
+
+JSON
+
+{
+	  "id": "NNCO40HLYN87",
+	  "method": "credit_card",
+	  "usage_permissions": [
+	    "balance_funding"
+	  ],
+	  "status": "active",
+	  "meta": {
+	    "accountholder_name": "Jane Doe",
+	    "network": "Visa",
+	    "last4": "1111",
+	    "year": "2028",
+	    "month": "12",
+	    "expired": false,
+	    "last_payment_failed_at": null
+	  }
+}
+You must include an idempotency key when calling POST /topups; you can retry with the same key, and we guarantee at most one successful topup per key. If a previous request with that key was accepted (topup created), subsequent requests return 409 Conflict referencing the existing topup, but if the previous attempt failed (e.g., 4xx validation error), you can reuse the same key to resubmit corrected parameters.
+
+When a topup is created, it will first show a status of created , meaning the topup request was successful and the transaction is underway. Once the funds have been added to the account balance, the topup status will change to fully_credited and the TOPUPS.FULLY_CREDITED webhook event will trigger (if your account has webhooks enabled).
+
+Example Topup
+JSON
+
+{
+  "topup": {
+    "id": "XC82V7YJI4CC",
+    "amount": 200.35,
+    "processing_fee": 6.01,
+    "funding_source_id": "FUNDING-SOURCE-ID",
+    "status": "fully_credited",
+    "created_at": "2025-08-14T22:22:30.783Z",
+    "fully_credited_at": null,
+    "rejected_at": null,
+    "reversed_at": null,
+    "reversed_reason": null,
+    "idempotency_key": "abc1234"
+  }
+}
