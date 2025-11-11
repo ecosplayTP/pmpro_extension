@@ -97,7 +97,11 @@ function ecosplay_referrals_service() {
 
     if ( null === $service ) {
         require_once ECOSPLAY_REFERRALS_INC . 'class-referrals-service.php';
-        $service = new Ecosplay_Referrals_Service( ecosplay_referrals_store() );
+        require_once ECOSPLAY_REFERRALS_INC . 'class-stripe-client.php';
+        require_once ECOSPLAY_REFERRALS_INC . 'class-stripe-secrets.php';
+
+        $stripe_client = new Ecosplay_Referrals_Stripe_Client( ecosplay_referrals_get_stripe_secret() );
+        $service       = new Ecosplay_Referrals_Service( ecosplay_referrals_store(), $stripe_client );
     }
 
     return $service;
@@ -132,7 +136,7 @@ register_deactivation_hook( __FILE__, 'ecosplay_referrals_deactivate' );
 function ecosplay_referrals_boot() {
     $service = ecosplay_referrals_service();
 
-    require_once ECOSPLAY_REFERRALS_INC . 'class-stripe-secrets.php';
+    require_once ECOSPLAY_REFERRALS_INC . 'class-stripe-webhooks.php';
 
     if ( is_admin() ) {
         require_once ECOSPLAY_REFERRALS_ADMIN . 'class-admin-settings.php';
@@ -150,6 +154,7 @@ function ecosplay_referrals_boot() {
 
     new Ecosplay_Referrals_Floating_Notice( $service );
     new Ecosplay_Referrals_Shortcodes( $service );
+    new Ecosplay_Referrals_Stripe_Webhooks( ecosplay_referrals_store() );
 }
 
 add_action( 'plugins_loaded', 'ecosplay_referrals_boot' );
