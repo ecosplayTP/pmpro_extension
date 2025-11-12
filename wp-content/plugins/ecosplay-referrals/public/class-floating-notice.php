@@ -159,6 +159,20 @@ class Ecosplay_Referrals_Floating_Notice {
             return false;
         }
 
+        if ( ! function_exists( 'pmpro_hasMembershipLevel' ) ) {
+            $this->should_render = false;
+
+            return false;
+        }
+
+        $user_id = get_current_user_id();
+
+        if ( ! $this->service->is_user_allowed( $user_id ) ) {
+            $this->should_render = false;
+
+            return false;
+        }
+
         $should_show = apply_filters( 'ecosplay_referrals_should_display_notice', true );
 
         if ( ! $should_show ) {
