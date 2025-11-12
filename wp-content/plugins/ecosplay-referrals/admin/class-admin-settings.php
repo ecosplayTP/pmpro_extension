@@ -594,7 +594,7 @@ class Ecosplay_Referrals_Admin_Settings {
         $message = sanitize_textarea_field( (string) $value );
 
         if ( '' === trim( $message ) ) {
-            return $this->defaults['notice_message'];
+            return '';
         }
 
         return $message;
