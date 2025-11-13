@@ -720,7 +720,7 @@ class Ecosplay_Referrals_Admin_Settings {
         $has_existing = ! empty( $options['stripe_secret_exists'] );
 
         printf(
-            '<input type="password" class="regular-text" name="%1$s[stripe_secret_key]" value="" autocomplete="off" placeholder="sk_live_********" />',
+            '<input type="password" class="regular-text" name="%1$s[stripe_secret_key]" value="" autocomplete="new-password" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="sk_live_********" />',
             esc_attr( $this->option_name )
         );
 
@@ -758,7 +758,7 @@ class Ecosplay_Referrals_Admin_Settings {
         $has_existing = ! empty( $options['tremendous_secret_exists'] );
 
         printf(
-            '<input type="password" class="regular-text" name="%1$s[tremendous_secret_key]" value="" autocomplete="off" placeholder="trm_live_********" />',
+            '<input type="password" class="regular-text" name="%1$s[tremendous_secret_key]" value="" autocomplete="new-password" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="trm_live_********" />',
             esc_attr( $this->option_name )
         );
 
