@@ -243,7 +243,8 @@ class Ecosplay_Referrals_Admin_Settings {
         $reward            = isset( $input['reward_amount'] ) ? $this->sanitize_amount( $input['reward_amount'] ) : $this->defaults['reward_amount'];
         $levels            = isset( $input['allowed_levels'] ) ? $this->sanitize_allowed_levels( $input['allowed_levels'] ) : $this->defaults['allowed_levels'];
         $message           = isset( $input['notice_message'] ) ? $this->sanitize_notice_message( $input['notice_message'] ) : $this->defaults['notice_message'];
-        $secret            = isset( $input['stripe_secret_key'] ) ? $this->sanitize_stripe_secret( $input['stripe_secret_key'] ) : null;
+        $stripe_edit       = ! empty( $input['stripe_secret_edit'] ) && '1' === (string) $input['stripe_secret_edit'];
+        $secret            = $stripe_edit && isset( $input['stripe_secret_key'] ) ? $this->sanitize_stripe_secret( $input['stripe_secret_key'] ) : null;
         $tremendous_secret = isset( $input['tremendous_secret_key'] ) ? $this->sanitize_tremendous_secret( $input['tremendous_secret_key'] ) : null;
         $threshold         = isset( $input['balance_alert_threshold'] ) ? $this->sanitize_amount( $input['balance_alert_threshold'] ) : $this->defaults['balance_alert_threshold'];
         $campaign          = isset( $input['tremendous_campaign_id'] ) ? $this->sanitize_tremendous_campaign_id( $input['tremendous_campaign_id'] ) : $this->defaults['tremendous_campaign_id'];
@@ -718,17 +719,28 @@ class Ecosplay_Referrals_Admin_Settings {
     public function render_stripe_secret_field() {
         $options      = $this->get_options();
         $has_existing = ! empty( $options['stripe_secret_exists'] );
+        $description  = $has_existing
+            ? __( 'Une clé est déjà enregistrée. Laissez vide pour la conserver.', 'ecosplay-referrals' )
+            : __( 'Saisissez la clé secrète Stripe à chiffrer et stocker.', 'ecosplay-referrals' );
+
+        echo '<button type="button" class="button ecos-referrals-stripe-secret-toggle">' .
+            esc_html__( 'Modifier la clé secrète Stripe', 'ecosplay-referrals' ) .
+            '</button>';
 
         printf(
-            '<input type="password" class="regular-text" name="%1$s[stripe_secret_key]" value="" autocomplete="new-password" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="sk_live_********" />',
+            '<input type="hidden" class="ecos-referrals-stripe-secret-edit" name="%1$s[stripe_secret_edit]" value="0" />',
             esc_attr( $this->option_name )
         );
 
-        if ( $has_existing ) {
-            echo '<p class="description">' . esc_html__( 'Une clé est déjà enregistrée. Laissez vide pour la conserver.', 'ecosplay-referrals' ) . '</p>';
-        } else {
-            echo '<p class="description">' . esc_html__( 'Saisissez la clé secrète Stripe à chiffrer et stocker.', 'ecosplay-referrals' ) . '</p>';
-        }
+        echo '<div class="ecos-referrals-stripe-secret is-hidden">';
+
+        printf(
+            '<input type="password" class="regular-text ecos-referrals-stripe-secret-input" name="%1$s[stripe_secret_key]" value="" autocomplete="new-password" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="sk_live_********" disabled />',
+            esc_attr( $this->option_name )
+        );
+
+        echo '<p class="description">' . esc_html( $description ) . '</p>';
+        echo '</div>';
     }
 
     /**

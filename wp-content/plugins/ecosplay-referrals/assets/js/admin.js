@@ -12,6 +12,20 @@
     $( function () {
         var strings = window.ecosReferralsAdmin || {};
 
+        /**
+         * Reveals and enables the Stripe secret editor on demand.
+         */
+        $( '.ecos-referrals-stripe-secret-toggle' ).on( 'click', function () {
+            var $cell = $( this ).closest( 'td' );
+            var $container = $cell.find( '.ecos-referrals-stripe-secret' );
+            var $input = $container.find( '.ecos-referrals-stripe-secret-input' );
+            var $editField = $cell.find( '.ecos-referrals-stripe-secret-edit' );
+
+            $container.removeClass( 'is-hidden' );
+            $input.prop( 'disabled', false ).val( '' );
+            $editField.val( '1' );
+        } );
+
         $( '.ecos-referrals-actions form' ).on( 'submit', function ( event ) {
             var action = $( 'input[name="ecosplay_referrals_action"]', this ).val();
 
