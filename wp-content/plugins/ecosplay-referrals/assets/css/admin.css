@@ -23,6 +23,10 @@
     margin-bottom: 1rem;
 }
 
+.is-hidden {
+    display: none;
+}
+
 .ecos-referrals-card {
     background: #fff;
     border: 1px solid #ccd0d4;
