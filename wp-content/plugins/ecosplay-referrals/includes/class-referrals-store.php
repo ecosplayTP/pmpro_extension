@@ -119,6 +119,7 @@ class Ecosplay_Referrals_Store {
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             user_id BIGINT(20) UNSIGNED NOT NULL,
             has_seen TINYINT(1) NOT NULL DEFAULT 0,
+            notice_message_updated_at DATETIME NULL,
             last_reset_at DATETIME NULL,
             updated_at DATETIME NULL,
             PRIMARY KEY (id),
@@ -189,6 +190,7 @@ class Ecosplay_Referrals_Store {
         $this->maybe_add_referral_column( 'tremendous_status', 'VARCHAR(32) NULL' );
         $this->maybe_add_referral_column( 'tremendous_status_message', 'VARCHAR(255) NULL' );
         $this->maybe_add_referral_column( 'tremendous_balance', 'DECIMAL(10,2) NULL' );
+        $this->maybe_add_notification_column( 'notice_message_updated_at', 'DATETIME NULL' );
         $this->maybe_add_webhook_column( 'provider', "VARCHAR(32) NOT NULL DEFAULT 'stripe'" );
         $this->maybe_add_webhook_column( 'resource_state', 'VARCHAR(64) NULL' );
         $this->backfill_webhook_provider();
@@ -233,6 +235,33 @@ class Ecosplay_Referrals_Store {
         global $wpdb;
 
         $table  = esc_sql( $this->webhooks_table() );
+        $column = sanitize_key( $column );
+
+        if ( '' === $column ) {
+            return;
+        }
+
+        $exists = $wpdb->get_var( $wpdb->prepare( "SHOW COLUMNS FROM `{$table}` LIKE %s", $column ) );
+
+        if ( $exists ) {
+            return;
+        }
+
+        $wpdb->query( "ALTER TABLE `{$table}` ADD COLUMN `{$column}` {$definition}" );
+    }
+
+    /**
+     * Ensures notification table columns exist without re-running full migrations.
+     *
+     * @param string $column     Column name to check.
+     * @param string $definition SQL fragment for column definition.
+     *
+     * @return void
+     */
+    protected function maybe_add_notification_column( $column, $definition ) {
+        global $wpdb;
+
+        $table  = esc_sql( $this->notifications_table() );
         $column = sanitize_key( $column );
 
         if ( '' === $column ) {
@@ -1196,39 +1225,56 @@ class Ecosplay_Referrals_Store {
     /**
      * Checks if the floating notice dismissal was already stored for the user.
      *
-     * @param int $user_id User identifier.
+     * @param int    $user_id                  User identifier.
+     * @param string $notice_message_updated_at Current notice timestamp.
      *
      * @return bool
      */
-    public function has_seen_notification( $user_id ) {
+    public function has_seen_notification( $user_id, $notice_message_updated_at = '' ) {
         global $wpdb;
 
-        $flag = $wpdb->get_var(
+        $row = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT has_seen FROM {$this->notifications_table()} WHERE user_id = %d",
+                "SELECT has_seen, notice_message_updated_at FROM {$this->notifications_table()} WHERE user_id = %d",
                 $user_id
             )
         );
 
-        return ! empty( $flag );
+        if ( ! $row || empty( $row->has_seen ) ) {
+            return false;
+        }
+
+        $current_timestamp = $this->normalize_notice_timestamp( $notice_message_updated_at );
+
+        if ( '' === $current_timestamp ) {
+            return true;
+        }
+
+        $stored_timestamp = $this->normalize_notice_timestamp( $row->notice_message_updated_at );
+
+        return '' !== $stored_timestamp && $stored_timestamp === $current_timestamp;
     }
 
     /**
      * Stores the floating notice dismissal flag for the given user.
      *
-     * @param int $user_id User identifier.
+     * @param int    $user_id                  User identifier.
+     * @param string $notice_message_updated_at Current notice timestamp.
      *
      * @return bool
      */
-    public function mark_notification_seen( $user_id ) {
+    public function mark_notification_seen( $user_id, $notice_message_updated_at = '' ) {
         global $wpdb;
+
+        $notice_message_updated_at = $this->normalize_notice_timestamp( $notice_message_updated_at );
 
         $result = $wpdb->query(
             $wpdb->prepare(
-                "INSERT INTO {$this->notifications_table()} (user_id, has_seen, updated_at)
-                VALUES (%d, 1, %s)
-                ON DUPLICATE KEY UPDATE has_seen = VALUES(has_seen), updated_at = VALUES(updated_at)",
+                "INSERT INTO {$this->notifications_table()} (user_id, has_seen, notice_message_updated_at, updated_at)
+                VALUES (%d, 1, %s, %s)
+                ON DUPLICATE KEY UPDATE has_seen = VALUES(has_seen), notice_message_updated_at = VALUES(notice_message_updated_at), updated_at = VALUES(updated_at)",
                 $user_id,
+                $notice_message_updated_at,
                 current_time( 'mysql' )
             )
         );
@@ -1261,6 +1307,19 @@ class Ecosplay_Referrals_Store {
             ),
             array( '%d', '%d', '%s' )
         );
+    }
+
+    /**
+     * Normalizes notice timestamps for comparison and storage.
+     *
+     * @param string $timestamp Raw timestamp value.
+     *
+     * @return string
+     */
+    protected function normalize_notice_timestamp( $timestamp ) {
+        $timestamp = sanitize_text_field( (string) $timestamp );
+
+        return '' === $timestamp ? '' : $timestamp;
     }
 
     /**
