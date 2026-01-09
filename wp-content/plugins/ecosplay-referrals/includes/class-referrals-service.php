@@ -23,7 +23,7 @@ class Ecosplay_Referrals_Service {
     const DEFAULT_CURRENCY = 'eur';
     const BALANCE_ALERT_EMAIL = 'ptacien@gmail.com';
     const DEFAULT_ALLOWED_LEVELS = array( 'pmpro_role_2' );
-    const DEFAULT_NOTICE_MESSAGE = 'Parrainez vos amis pour cumuler des récompenses ECOSplay.';
+    const DEFAULT_NOTICE_MESSAGE = '';
     const NOTICE_VERSION_OPTION  = 'ecosplay_referrals_notice_version';
     const NOTICE_CACHE_GROUP     = 'ecosplay_referrals_notice';
     const NOTICE_CACHE_TTL       = 3600;
@@ -1190,7 +1190,11 @@ class Ecosplay_Referrals_Service {
      * @return string
      */
     public function get_notice_message() {
-        $default = __( self::DEFAULT_NOTICE_MESSAGE, 'ecosplay-referrals' );
+        $default = self::DEFAULT_NOTICE_MESSAGE;
+
+        if ( '' !== $default ) {
+            $default = __( $default, 'ecosplay-referrals' );
+        }
 
         return (string) apply_filters( 'ecosplay_referrals_notice_message', $default );
     }
