@@ -373,14 +373,91 @@ class Ecosplay_Referrals_Admin_Settings {
         $options = $this->get_options();
         $levels  = isset( $options['allowed_levels'] ) ? (array) $options['allowed_levels'] : $this->defaults['allowed_levels'];
         $value   = implode( "\n", array_map( 'strval', $levels ) );
+        $recognized = $this->get_recognized_allowed_levels( $levels );
+        $recognized_markup = '';
+
+        if ( ! empty( $recognized ) ) {
+            $recognized_markup = sprintf(
+                '<p class="description"><strong>%1$s</strong> %2$s</p>',
+                esc_html__( 'Identifiants reconnus :', 'ecosplay-referrals' ),
+                esc_html( implode( ', ', array_map( 'strval', $recognized ) ) )
+            );
+        }
 
         printf(
             '<textarea class="large-text code" rows="4" name="%1$s[allowed_levels]" placeholder="pmpro_role_2">%2$s</textarea>' .
-            '<p class="description">%3$s</p>',
+            '<p class="description">%3$s</p>%4$s',
             esc_attr( $this->option_name ),
             esc_textarea( $value ),
-            esc_html__( 'Un identifiant ou slug par ligne.', 'ecosplay-referrals' )
+            esc_html__( 'Un identifiant ou slug par ligne.', 'ecosplay-referrals' ),
+            $recognized_markup
         );
+    }
+
+    /**
+     * Builds the list of configured identifiers that match existing levels.
+     *
+     * @param array<int|string> $allowed_levels Normalized allow list entries.
+     *
+     * @return array<int|string>
+     */
+    protected function get_recognized_allowed_levels( array $allowed_levels ) {
+        if ( empty( $allowed_levels ) || ! function_exists( 'pmpro_getAllLevels' ) ) {
+            return array();
+        }
+
+        $levels = pmpro_getAllLevels();
+
+        if ( ! is_array( $levels ) ) {
+            return array();
+        }
+
+        $level_ids   = array();
+        $level_slugs = array();
+
+        foreach ( $levels as $level ) {
+            if ( is_object( $level ) ) {
+                if ( isset( $level->id ) ) {
+                    $level_ids[ (int) $level->id ] = true;
+                }
+
+                if ( isset( $level->ID ) ) {
+                    $level_ids[ (int) $level->ID ] = true;
+                }
+
+                if ( isset( $level->name ) && is_string( $level->name ) ) {
+                    $slug = sanitize_key( $level->name );
+
+                    if ( '' !== $slug ) {
+                        $level_slugs[ $slug ] = true;
+                    }
+                }
+            }
+        }
+
+        $recognized = array();
+
+        foreach ( $allowed_levels as $level ) {
+            if ( is_numeric( $level ) ) {
+                $level_id = (int) $level;
+
+                if ( isset( $level_ids[ $level_id ] ) ) {
+                    $recognized[] = $level_id;
+                }
+
+                continue;
+            }
+
+            if ( is_string( $level ) ) {
+                $slug = sanitize_key( $level );
+
+                if ( '' !== $slug && isset( $level_slugs[ $slug ] ) ) {
+                    $recognized[] = $slug;
+                }
+            }
+        }
+
+        return array_values( array_unique( $recognized, SORT_REGULAR ) );
     }
 
     /**
