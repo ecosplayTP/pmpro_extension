@@ -1073,7 +1073,7 @@ class Ecosplay_Referrals_Service {
             return false;
         }
 
-        return $this->store->has_seen_notification( $user_id );
+        return $this->store->has_seen_notification( $user_id, $this->get_notice_last_updated_at() );
     }
 
     /**
@@ -1090,7 +1090,7 @@ class Ecosplay_Referrals_Service {
             return false;
         }
 
-        return $this->store->mark_notification_seen( $user_id );
+        return $this->store->mark_notification_seen( $user_id, $this->get_notice_last_updated_at() );
     }
 
     /**
@@ -1160,6 +1160,17 @@ class Ecosplay_Referrals_Service {
         $default = __( self::DEFAULT_NOTICE_MESSAGE, 'ecosplay-referrals' );
 
         return (string) apply_filters( 'ecosplay_referrals_notice_message', $default );
+    }
+
+    /**
+     * Returns the last update timestamp of the floating notice message.
+     *
+     * @return string
+     */
+    public function get_notice_last_updated_at() {
+        $value = apply_filters( 'ecosplay_referrals_notice_last_updated_at', '' );
+
+        return is_string( $value ) ? $value : '';
     }
 
     /**

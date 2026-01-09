@@ -31,6 +31,7 @@ class Ecosplay_Referrals_Admin_Settings {
         'reward_amount'        => Ecosplay_Referrals_Service::REWARD_POINTS,
         'allowed_levels'       => Ecosplay_Referrals_Service::DEFAULT_ALLOWED_LEVELS,
         'notice_message'       => Ecosplay_Referrals_Service::DEFAULT_NOTICE_MESSAGE,
+        'notice_last_updated_at' => '',
         'stripe_secret_key'       => '',
         'stripe_secret_exists'    => false,
         'stripe_enabled'          => false,
@@ -64,6 +65,7 @@ class Ecosplay_Referrals_Admin_Settings {
         add_filter( 'ecosplay_referrals_reward_amount', array( $this, 'filter_reward' ) );
         add_filter( 'ecosplay_referrals_allowed_levels', array( $this, 'filter_allowed_levels' ) );
         add_filter( 'ecosplay_referrals_notice_message', array( $this, 'filter_notice_message' ) );
+        add_filter( 'ecosplay_referrals_notice_last_updated_at', array( $this, 'filter_notice_last_updated_at' ) );
         add_filter( 'ecosplay_referrals_balance_alert_threshold', array( $this, 'filter_balance_threshold' ) );
     }
 
@@ -249,6 +251,9 @@ class Ecosplay_Referrals_Admin_Settings {
         $threshold         = isset( $input['balance_alert_threshold'] ) ? $this->sanitize_amount( $input['balance_alert_threshold'] ) : $this->defaults['balance_alert_threshold'];
         $campaign          = isset( $input['tremendous_campaign_id'] ) ? $this->sanitize_tremendous_campaign_id( $input['tremendous_campaign_id'] ) : $this->defaults['tremendous_campaign_id'];
         $environment       = isset( $input['tremendous_environment'] ) ? $this->sanitize_tremendous_environment( $input['tremendous_environment'] ) : $this->defaults['tremendous_environment'];
+        $stored_message    = array_key_exists( 'notice_message', $stored ) ? (string) $stored['notice_message'] : null;
+        $message_changed   = null === $stored_message || $message !== $stored_message;
+        $notice_last_updated_at = array_key_exists( 'notice_last_updated_at', $stored ) ? (string) $stored['notice_last_updated_at'] : '';
 
         $sanitized['discount_amount'] = $discount;
         $sanitized['reward_amount']   = $reward;
@@ -259,6 +264,11 @@ class Ecosplay_Referrals_Admin_Settings {
         $sanitized['tremendous_enabled']      = ! empty( $input['tremendous_enabled'] );
         $sanitized['tremendous_campaign_id']  = $campaign;
         $sanitized['tremendous_environment']  = $environment;
+        $sanitized['notice_last_updated_at']  = $message_changed ? current_time( 'mysql' ) : $notice_last_updated_at;
+
+        if ( $message_changed ) {
+            $this->service->bump_notice_version();
+        }
 
         if ( null !== $secret ) {
             $sanitized['stripe_secret_key'] = $secret['cipher'];
@@ -471,6 +481,23 @@ class Ecosplay_Referrals_Admin_Settings {
 
         if ( isset( $options['notice_message'] ) ) {
             return (string) $options['notice_message'];
+        }
+
+        return (string) $value;
+    }
+
+    /**
+     * Adjusts the notice message timestamp exposed to the UI.
+     *
+     * @param string $value Default timestamp.
+     *
+     * @return string
+     */
+    public function filter_notice_last_updated_at( $value ) {
+        $options = $this->get_options();
+
+        if ( isset( $options['notice_last_updated_at'] ) ) {
+            return (string) $options['notice_last_updated_at'];
         }
 
         return (string) $value;
