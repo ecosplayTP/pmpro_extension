@@ -2156,7 +2156,17 @@ class Ecosplay_Referrals_Service {
             return false;
         }
 
-        return pmpro_hasMembershipLevel( $levels, $user_id );
+        $normalized_levels = $this->normalize_allowed_levels( $levels );
+
+        if ( ! empty( $normalized_levels['ids'] ) && pmpro_hasMembershipLevel( $normalized_levels['ids'], $user_id ) ) {
+            return true;
+        }
+
+        if ( ! empty( $normalized_levels['slugs'] ) && pmpro_hasMembershipLevel( $normalized_levels['slugs'], $user_id ) ) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -2199,6 +2209,64 @@ class Ecosplay_Referrals_Service {
             return false;
         }
 
+        $allowed    = $this->normalize_allowed_levels( $allowed_levels );
+        $references = $this->extract_level_references( $level );
+
+        foreach ( $references['ids'] as $id ) {
+            if ( in_array( $id, $allowed['ids'], true ) ) {
+                return true;
+            }
+        }
+
+        foreach ( $references['slugs'] as $slug ) {
+            if ( '' !== $slug && in_array( $slug, $allowed['slugs'], true ) ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Builds ID/slug collections from the allowed levels configuration.
+     *
+     * @param array<mixed> $allowed_levels Raw allowed level values.
+     *
+     * @return array{ids: array<int>, slugs: array<string>}
+     */
+    private function normalize_allowed_levels( array $allowed_levels ) {
+        $ids   = array();
+        $slugs = array();
+
+        foreach ( $allowed_levels as $allowed_level ) {
+            $references = $this->extract_level_references( $allowed_level );
+
+            if ( ! empty( $references['ids'] ) ) {
+                $ids = array_merge( $ids, $references['ids'] );
+            }
+
+            if ( ! empty( $references['slugs'] ) ) {
+                $slugs = array_merge( $slugs, $references['slugs'] );
+            }
+        }
+
+        $ids   = array_values( array_unique( $ids ) );
+        $slugs = array_values( array_unique( array_filter( $slugs ) ) );
+
+        return array(
+            'ids'   => $ids,
+            'slugs' => $slugs,
+        );
+    }
+
+    /**
+     * Extracts membership IDs and slugs from a level reference.
+     *
+     * @param mixed $level Level reference from PMPro or configuration.
+     *
+     * @return array{ids: array<int>, slugs: array<string>}
+     */
+    private function extract_level_references( $level ) {
         $ids   = array();
         $slugs = array();
 
@@ -2217,22 +2285,21 @@ class Ecosplay_Referrals_Service {
         } elseif ( is_numeric( $level ) ) {
             $ids[] = (int) $level;
         } elseif ( is_string( $level ) ) {
-            $slugs[] = sanitize_key( $level );
-        }
+            $key = sanitize_key( $level );
 
-        foreach ( $ids as $id ) {
-            if ( in_array( $id, $allowed_levels, true ) ) {
-                return true;
+            if ( '' !== $key ) {
+                if ( preg_match( '/^pmpro_role_(\d+)$/', $key, $matches ) ) {
+                    $ids[] = (int) $matches[1];
+                } else {
+                    $slugs[] = $key;
+                }
             }
         }
 
-        foreach ( $slugs as $slug ) {
-            if ( '' !== $slug && in_array( $slug, $allowed_levels, true ) ) {
-                return true;
-            }
-        }
-
-        return false;
+        return array(
+            'ids'   => array_values( array_unique( $ids ) ),
+            'slugs' => array_values( array_unique( array_filter( $slugs ) ) ),
+        );
     }
 
     /**
