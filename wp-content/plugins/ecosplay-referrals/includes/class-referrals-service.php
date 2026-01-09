@@ -2128,31 +2128,13 @@ class Ecosplay_Referrals_Service {
     public function is_user_allowed( $user_id ) {
         $user_id = (int) $user_id;
 
-        if ( $user_id <= 0 ) {
+        if ( $user_id <= 0 || ! function_exists( 'pmpro_hasMembershipLevel' ) ) {
             return false;
         }
 
         $levels = $this->get_allowed_level_ids();
 
         if ( empty( $levels ) ) {
-            return false;
-        }
-
-        if ( function_exists( 'pmpro_getMembershipLevelsForUser' ) ) {
-            $user_levels = pmpro_getMembershipLevelsForUser( $user_id );
-
-            if ( ! empty( $user_levels ) ) {
-                foreach ( $user_levels as $level ) {
-                    if ( $this->level_matches_allowed( $level, $levels ) ) {
-                        return true;
-                    }
-                }
-
-                return false;
-            }
-        }
-
-        if ( ! function_exists( 'pmpro_hasMembershipLevel' ) ) {
             return false;
         }
 
