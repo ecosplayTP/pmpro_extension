@@ -25,6 +25,8 @@ class Ecosplay_Referrals_Service {
     const DEFAULT_ALLOWED_LEVELS = array( 'pmpro_role_2' );
     const DEFAULT_NOTICE_MESSAGE = 'Parrainez vos amis pour cumuler des récompenses ECOSplay.';
     const NOTICE_VERSION_OPTION  = 'ecosplay_referrals_notice_version';
+    const NOTICE_CACHE_GROUP     = 'ecosplay_referrals_notice';
+    const NOTICE_CACHE_TTL       = 3600;
     const STRIPE_DISABLED_ERROR  = 'ecosplay_referrals_stripe_disabled';
     const TREMENDOUS_DISABLED_ERROR = 'ecosplay_referrals_tremendous_disabled';
 
@@ -1073,7 +1075,25 @@ class Ecosplay_Referrals_Service {
             return false;
         }
 
-        return $this->store->has_seen_notification( $user_id, $this->get_notice_last_updated_at() );
+        $message_ts   = $this->get_notice_last_updated_at();
+        $message_stamp = $this->normalize_notice_timestamp( $message_ts );
+
+        $this->sync_notice_cache_stamp( $user_id, $message_stamp );
+
+        $cache_key = $this->get_notice_cache_key( $user_id, $message_stamp );
+        $found     = false;
+        $cached    = $this->get_notice_cache_value( $cache_key, $found );
+
+        if ( $found ) {
+            return (bool) $cached;
+        }
+
+        $seen = $this->store->has_seen_notification( $user_id, $message_ts );
+
+        $this->set_notice_cache_value( $cache_key, $seen ? 1 : 0 );
+        $this->set_notice_cache_value( $this->get_notice_stamp_cache_key( $user_id ), $message_stamp );
+
+        return $seen;
     }
 
     /**
@@ -1090,7 +1110,18 @@ class Ecosplay_Referrals_Service {
             return false;
         }
 
-        return $this->store->mark_notification_seen( $user_id, $this->get_notice_last_updated_at() );
+        $message_ts    = $this->get_notice_last_updated_at();
+        $message_stamp = $this->normalize_notice_timestamp( $message_ts );
+        $updated       = $this->store->mark_notification_seen( $user_id, $message_ts );
+
+        $this->clear_notice_cache( $user_id, $message_stamp );
+
+        if ( $updated ) {
+            $this->set_notice_cache_value( $this->get_notice_cache_key( $user_id, $message_stamp ), 1 );
+            $this->set_notice_cache_value( $this->get_notice_stamp_cache_key( $user_id ), $message_stamp );
+        }
+
+        return $updated;
     }
 
     /**
@@ -1109,6 +1140,8 @@ class Ecosplay_Referrals_Service {
 
         if ( null === $user_id ) {
             $this->bump_notice_version();
+        } else {
+            $this->clear_notice_cache( (int) $user_id );
         }
 
         return true;
@@ -1197,6 +1230,141 @@ class Ecosplay_Referrals_Service {
         $next = $this->get_notice_version() + 1;
 
         update_option( self::NOTICE_VERSION_OPTION, $next, false );
+    }
+
+    /**
+     * Builds a cache key for the notice dismissal state.
+     *
+     * @param int    $user_id    User identifier.
+     * @param string $message_ts Notice message timestamp.
+     *
+     * @return string
+     */
+    protected function get_notice_cache_key( $user_id, $message_ts ) {
+        $message_stamp = $this->normalize_notice_timestamp( $message_ts );
+        $version       = $this->get_notice_version();
+
+        return sprintf( 'ecos_ref_notice_seen_%d_%s_%d', (int) $user_id, $message_stamp, $version );
+    }
+
+    /**
+     * Builds a cache key storing the last message timestamp for a user.
+     *
+     * @param int $user_id User identifier.
+     *
+     * @return string
+     */
+    protected function get_notice_stamp_cache_key( $user_id ) {
+        return sprintf( 'ecos_ref_notice_seen_stamp_%d', (int) $user_id );
+    }
+
+    /**
+     * Normalizes the notice timestamp for cache storage.
+     *
+     * @param string $message_ts Message timestamp value.
+     *
+     * @return string
+     */
+    protected function normalize_notice_timestamp( $message_ts ) {
+        $message_ts = trim( (string) $message_ts );
+
+        if ( '' === $message_ts ) {
+            return '0';
+        }
+
+        $normalized = preg_replace( '/[^a-zA-Z0-9_]/', '_', $message_ts );
+        $normalized = trim( $normalized, '_' );
+
+        return '' !== $normalized ? $normalized : '0';
+    }
+
+    /**
+     * Reads a cached value for the notice dismissal state.
+     *
+     * @param string $key   Cache key.
+     * @param bool   $found Whether the value exists.
+     *
+     * @return mixed
+     */
+    protected function get_notice_cache_value( $key, &$found ) {
+        if ( wp_using_ext_object_cache() ) {
+            return wp_cache_get( $key, self::NOTICE_CACHE_GROUP, false, $found );
+        }
+
+        $value = get_transient( $key );
+        $found = false !== $value;
+
+        return $value;
+    }
+
+    /**
+     * Stores a cached value for the notice dismissal state.
+     *
+     * @param string $key   Cache key.
+     * @param mixed  $value Cache value.
+     *
+     * @return void
+     */
+    protected function set_notice_cache_value( $key, $value ) {
+        if ( wp_using_ext_object_cache() ) {
+            wp_cache_set( $key, $value, self::NOTICE_CACHE_GROUP, self::NOTICE_CACHE_TTL );
+            return;
+        }
+
+        set_transient( $key, $value, self::NOTICE_CACHE_TTL );
+    }
+
+    /**
+     * Removes a cached value for the notice dismissal state.
+     *
+     * @param string $key Cache key.
+     *
+     * @return void
+     */
+    protected function delete_notice_cache_value( $key ) {
+        if ( wp_using_ext_object_cache() ) {
+            wp_cache_delete( $key, self::NOTICE_CACHE_GROUP );
+            return;
+        }
+
+        delete_transient( $key );
+    }
+
+    /**
+     * Clears cached dismissal data for a given user.
+     *
+     * @param int         $user_id    User identifier.
+     * @param string|null $message_ts Optional message timestamp.
+     *
+     * @return void
+     */
+    protected function clear_notice_cache( $user_id, $message_ts = null ) {
+        $message_ts = null === $message_ts ? $this->get_notice_last_updated_at() : $message_ts;
+
+        $this->delete_notice_cache_value( $this->get_notice_cache_key( $user_id, $message_ts ) );
+        $this->delete_notice_cache_value( $this->get_notice_stamp_cache_key( $user_id ) );
+    }
+
+    /**
+     * Ensures the cached stamp matches the current notice timestamp.
+     *
+     * @param int    $user_id       User identifier.
+     * @param string $message_stamp Normalized notice timestamp.
+     *
+     * @return void
+     */
+    protected function sync_notice_cache_stamp( $user_id, $message_stamp ) {
+        $stamp_key   = $this->get_notice_stamp_cache_key( $user_id );
+        $found       = false;
+        $cached_stamp = $this->get_notice_cache_value( $stamp_key, $found );
+
+        if ( $found && $cached_stamp !== $message_stamp ) {
+            $this->delete_notice_cache_value( $this->get_notice_cache_key( $user_id, $cached_stamp ) );
+        }
+
+        if ( ! $found || $cached_stamp !== $message_stamp ) {
+            $this->set_notice_cache_value( $stamp_key, $message_stamp );
+        }
     }
 
     /**
