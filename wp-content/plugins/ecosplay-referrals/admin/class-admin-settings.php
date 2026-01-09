@@ -389,7 +389,7 @@ class Ecosplay_Referrals_Admin_Settings {
             '<p class="description">%3$s</p>%4$s',
             esc_attr( $this->option_name ),
             esc_textarea( $value ),
-            esc_html__( 'Un identifiant ou slug par ligne.', 'ecosplay-referrals' ),
+            esc_html__( 'Un identifiant numérique, un slug ou pmpro_role_{id} par ligne.', 'ecosplay-referrals' ),
             $recognized_markup
         );
     }
@@ -438,6 +438,18 @@ class Ecosplay_Referrals_Admin_Settings {
         $recognized = array();
 
         foreach ( $allowed_levels as $level ) {
+            if ( is_string( $level ) && 0 === strpos( $level, 'pmpro_role_' ) ) {
+                if ( preg_match( '/^pmpro_role_(\d+)$/', $level, $matches ) ) {
+                    $level_id = (int) $matches[1];
+
+                    if ( isset( $level_ids[ $level_id ] ) ) {
+                        $recognized[] = 'pmpro_role_' . $level_id;
+                    }
+                }
+
+                continue;
+            }
+
             if ( is_numeric( $level ) ) {
                 $level_id = (int) $level;
 
