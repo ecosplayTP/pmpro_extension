@@ -73,10 +73,21 @@ class Ecosplay_Referrals_Shortcodes {
      * @return string
      */
     public function render_link( $atts = array() ) {
-        $user_id = $this->resolve_authorized_user();
-
-        if ( ! $user_id ) {
+        if ( ! is_user_logged_in() ) {
             return '';
+        }
+
+        $user_id = get_current_user_id();
+
+        if ( $user_id <= 0 ) {
+            return '';
+        }
+
+        if ( ! $this->service->is_user_allowed( $user_id ) ) {
+            return sprintf(
+                '<span class="ecos-referral-link ecos-referral-link--unauthorized">%s</span>',
+                esc_html__( "Votre niveau d'adhésion ne permet pas le parrainage.", 'ecosplay-referrals' )
+            );
         }
 
         $code = $this->service->get_member_code( $user_id );
