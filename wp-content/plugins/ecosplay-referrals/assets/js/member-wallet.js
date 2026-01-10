@@ -15,6 +15,9 @@
         return;
     }
 
+    /**
+     * Envoie une requête AJAX vers l'endpoint WordPress.
+     */
     const request = (action, payload = {}) => {
         const body = new URLSearchParams();
         body.append('action', action);
@@ -36,6 +39,9 @@
         }).then((response) => response.json());
     };
 
+    /**
+     * Affiche un message de notification dans le portefeuille.
+     */
     const renderNotice = (container, type, message) => {
         const notice = container.querySelector('.ecos-referral-wallet__notice');
 
@@ -57,6 +63,9 @@
         notice.style.display = 'block';
     };
 
+    /**
+     * Met à jour les informations de portefeuille dans l'interface.
+     */
     const updateMetrics = (container, wallet) => {
         const mapping = {
             earned_credits: 'earned_credits_formatted',
@@ -110,6 +119,9 @@
         updateAssociationErrors(container, wallet);
     };
 
+    /**
+     * Rafraîchit la liste des erreurs d'association Tremendous.
+     */
     const updateAssociationErrors = (container, wallet) => {
         const list = container.querySelector('[data-wallet-field="association_errors"]');
 
@@ -133,6 +145,9 @@
         list.style.display = 'block';
     };
 
+    /**
+     * Ré-affiche l'historique des virements.
+     */
     const updateLedger = (container, wallet) => {
         const tableBody = container.querySelector('[data-wallet-ledger] tbody');
 
@@ -177,11 +192,12 @@
     };
 
     wallets.forEach((wallet) => {
+        const associationSection = wallet.querySelector('.ecos-referral-wallet__association');
         const associateBtn = wallet.querySelector('[data-wallet-action="associate"]');
         const refreshBtn = wallet.querySelector('[data-wallet-action="refresh"]');
         const rewardForm = wallet.querySelector('[data-wallet-form="reward"]');
 
-        if (associateBtn) {
+        if (associationSection && associateBtn) {
             associateBtn.addEventListener('click', (event) => {
                 event.preventDefault();
                 associateBtn.disabled = true;
@@ -212,7 +228,7 @@
             });
         }
 
-        if (refreshBtn) {
+        if (associationSection && refreshBtn) {
             refreshBtn.addEventListener('click', (event) => {
                 event.preventDefault();
                 refreshBtn.disabled = true;
