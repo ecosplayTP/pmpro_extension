@@ -18,8 +18,9 @@ Voir les codes qui ont été utilisés
 
 ## Shortcodes disponibles
 
+- `[ecos_referral_code button_text="Copier le code" copied_text="Code copié"]` affiche le code de parrainage du membre premium connecté avec un bouton de copie.
 - `[ecos_referral_points decimals="0"]` affiche le total de points gagnés par le membre connecté disposant d’un niveau « premium ». L’attribut `decimals` est optionnel pour préciser le nombre de décimales.
-- `[ecos_referral_link url="https://exemple.com" text="Partager mon lien" param="ref"]` génère un lien de parrainage contenant le code du membre premium connecté. Les attributs sont facultatifs : `url` définit la cible de base, `text` le texte cliquable et `param` le nom du paramètre (par défaut `ref`).
+- `[ecos_referral_link url="https://exemple.com" text="Partager mon lien" param="ref"]` génère un lien de parrainage contenant le code du membre premium connecté. Les attributs sont facultatifs : `url` définit la cible de base (par défaut la page d’adhésion), `text` le texte cliquable et `param` le nom du paramètre (par défaut `ref`).
 
 # initial code template 
 template pour la création d'un plugin wordpress
