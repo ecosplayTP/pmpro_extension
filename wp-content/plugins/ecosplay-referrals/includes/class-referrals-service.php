@@ -1131,7 +1131,9 @@ class Ecosplay_Referrals_Service {
         $this->store->reset_notification_flag( null === $user_id ? null : (int) $user_id );
 
         if ( null === $user_id ) {
+            $previous_version = $this->get_notice_version();
             $this->bump_notice_version();
+            $this->delete_notice_cache_value( $this->get_notice_cache_key( (int) get_current_user_id(), $previous_version ) );
         } else {
             $this->clear_notice_cache( (int) $user_id );
         }
@@ -1220,12 +1222,13 @@ class Ecosplay_Referrals_Service {
     /**
      * Builds a cache key for the notice dismissal state.
      *
-     * @param int $user_id User identifier.
+     * @param int      $user_id User identifier.
+     * @param int|null $version Optional cache version override.
      *
      * @return string
      */
-    protected function get_notice_cache_key( $user_id ) {
-        $version = $this->get_notice_version();
+    protected function get_notice_cache_key( $user_id, $version = null ) {
+        $version = null === $version ? $this->get_notice_version() : (int) $version;
 
         return sprintf( 'ecos_ref_notice_seen_%s_%d_%d', self::NOTICE_CACHE_SLUG, (int) $user_id, $version );
     }

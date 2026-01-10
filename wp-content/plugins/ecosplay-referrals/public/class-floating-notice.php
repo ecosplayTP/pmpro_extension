@@ -167,6 +167,12 @@ class Ecosplay_Referrals_Floating_Notice {
 
         $user_id = get_current_user_id();
 
+        if ( $user_id <= 0 ) {
+            $this->should_render = false;
+
+            return false;
+        }
+
         if ( ! $this->service->is_user_allowed( $user_id ) ) {
             $this->should_render = false;
 
