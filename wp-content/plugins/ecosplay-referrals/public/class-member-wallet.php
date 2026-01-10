@@ -96,21 +96,23 @@ class Ecosplay_Referrals_Member_Wallet {
                 </div>
             </div>
 
-            <div class="ecos-referral-wallet__association">
-                <h4><?php esc_html_e( 'Compte Tremendous', 'ecosplay-referrals' ); ?></h4>
-                <p data-wallet-field="association_label"><?php echo esc_html( $payload['association_label'] ); ?></p>
-                <p class="ecos-referral-wallet__tremendous-balance" data-wallet-field="tremendous_balance_label" style="<?php echo '' === $payload['tremendous_balance_label'] ? 'display:none;' : ''; ?>"><?php echo esc_html( $payload['tremendous_balance_label'] ); ?></p>
-                <ul class="ecos-referral-wallet__association-errors" data-wallet-field="association_errors" style="<?php echo empty( $payload['association_errors'] ) ? 'display:none;' : ''; ?>">
-                    <?php foreach ( $payload['association_errors'] as $error ) : ?>
-                        <li><?php echo esc_html( $error ); ?></li>
-                    <?php endforeach; ?>
-                </ul>
-            </div>
+            <?php if ( $payload['tremendous_enabled'] ) : ?>
+                <div class="ecos-referral-wallet__association">
+                    <h4><?php esc_html_e( 'Compte Tremendous', 'ecosplay-referrals' ); ?></h4>
+                    <p data-wallet-field="association_label"><?php echo esc_html( $payload['association_label'] ); ?></p>
+                    <p class="ecos-referral-wallet__tremendous-balance" data-wallet-field="tremendous_balance_label" style="<?php echo '' === $payload['tremendous_balance_label'] ? 'display:none;' : ''; ?>"><?php echo esc_html( $payload['tremendous_balance_label'] ); ?></p>
+                    <ul class="ecos-referral-wallet__association-errors" data-wallet-field="association_errors" style="<?php echo empty( $payload['association_errors'] ) ? 'display:none;' : ''; ?>">
+                        <?php foreach ( $payload['association_errors'] as $error ) : ?>
+                            <li><?php echo esc_html( $error ); ?></li>
+                        <?php endforeach; ?>
+                    </ul>
+                </div>
 
-            <div class="ecos-referral-wallet__actions">
-                <button class="button" data-wallet-action="associate" type="button" style="<?php echo $payload['is_associated'] ? 'display:none;' : ''; ?>"><?php esc_html_e( 'Associer mon compte Tremendous', 'ecosplay-referrals' ); ?></button>
-                <button class="button" data-wallet-action="refresh" type="button" style="<?php echo $payload['is_associated'] ? '' : 'display:none;'; ?>"><?php esc_html_e( 'Rafraîchir mon solde Tremendous', 'ecosplay-referrals' ); ?></button>
-            </div>
+                <div class="ecos-referral-wallet__actions">
+                    <button class="button" data-wallet-action="associate" type="button" style="<?php echo $payload['is_associated'] ? 'display:none;' : ''; ?>"><?php esc_html_e( 'Associer mon compte Tremendous', 'ecosplay-referrals' ); ?></button>
+                    <button class="button" data-wallet-action="refresh" type="button" style="<?php echo $payload['is_associated'] ? '' : 'display:none;'; ?>"><?php esc_html_e( 'Rafraîchir mon solde Tremendous', 'ecosplay-referrals' ); ?></button>
+                </div>
+            <?php endif; ?>
 
             <div data-wallet-section="reward" style="<?php echo $payload['can_request_reward'] ? '' : 'display:none;'; ?>">
                 <form class="ecos-referral-wallet__transfer" data-wallet-form="reward">
@@ -404,6 +406,7 @@ class Ecosplay_Referrals_Member_Wallet {
             'association_status'          => isset( $wallet['association_status'] ) ? (string) $wallet['association_status'] : '',
             'can_request_reward'          => ! empty( $wallet['can_request_reward'] ),
             'is_associated'               => ! empty( $wallet['is_associated'] ),
+            'tremendous_enabled'          => ! empty( $wallet['tremendous_enabled'] ),
             'tremendous_balance'          => $tremendous_balance,
             'tremendous_balance_formatted'=> null === $tremendous_balance ? '' : $format( $tremendous_balance ),
             'tremendous_balance_label'    => null === $tremendous_balance ? '' : sprintf( __( 'Solde Tremendous disponible : %s', 'ecosplay-referrals' ), $format( $tremendous_balance ) ),

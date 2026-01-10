@@ -1364,21 +1364,24 @@ class Ecosplay_Referrals_Service {
         $earned      = isset( $referral->earned_credits ) ? (float) $referral->earned_credits : 0.0;
         $total_paid  = isset( $referral->total_paid ) ? (float) $referral->total_paid : 0.0;
         $available   = max( 0, $earned - $total_paid );
+        $tremendous_enabled = $this->is_tremendous_enabled();
+
         $wallet_base = array(
-            'earned_credits'    => $earned,
-            'total_paid'        => $total_paid,
-            'available_balance' => $available,
-            'currency'          => $currency,
-            'payouts'           => $this->store->get_member_payouts( $user_id, max( 1, $limit ) ),
-            'association_label' => __( 'Associez votre compte Tremendous pour demander des récompenses.', 'ecosplay-referrals' ),
-            'association_status'=> 'unlinked',
-            'association_errors'=> array(),
-            'is_associated'     => false,
-            'can_request_reward'=> false,
-            'tremendous_balance'=> null,
+            'earned_credits'     => $earned,
+            'total_paid'         => $total_paid,
+            'available_balance'  => $available,
+            'currency'           => $currency,
+            'payouts'            => $this->store->get_member_payouts( $user_id, max( 1, $limit ) ),
+            'tremendous_enabled' => $tremendous_enabled,
+            'association_label'  => __( 'Associez votre compte Tremendous pour demander des récompenses.', 'ecosplay-referrals' ),
+            'association_status' => 'unlinked',
+            'association_errors' => array(),
+            'is_associated'      => false,
+            'can_request_reward' => false,
+            'tremendous_balance' => null,
         );
 
-        if ( $this->is_tremendous_enabled() ) {
+        if ( $tremendous_enabled ) {
             $state = $this->sync_tremendous_state( $referral );
 
             if ( is_wp_error( $state ) ) {
