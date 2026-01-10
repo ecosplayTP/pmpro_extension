@@ -26,6 +26,7 @@ class Ecosplay_Referrals_Service {
     const DEFAULT_NOTICE_MESSAGE = '';
     const NOTICE_VERSION_OPTION  = 'ecosplay_referrals_notice_version';
     const NOTICE_CACHE_GROUP     = 'ecosplay_referrals_notice';
+    const NOTICE_CACHE_SLUG      = 'notice_seen';
     const NOTICE_CACHE_TTL       = 3600;
     const STRIPE_DISABLED_ERROR  = 'ecosplay_referrals_stripe_disabled';
     const TREMENDOUS_DISABLED_ERROR = 'ecosplay_referrals_tremendous_disabled';
@@ -1075,12 +1076,7 @@ class Ecosplay_Referrals_Service {
             return false;
         }
 
-        $message_ts   = $this->get_notice_last_updated_at();
-        $message_stamp = $this->normalize_notice_timestamp( $message_ts );
-
-        $this->sync_notice_cache_stamp( $user_id, $message_stamp );
-
-        $cache_key = $this->get_notice_cache_key( $user_id, $message_stamp );
+        $cache_key = $this->get_notice_cache_key( $user_id );
         $found     = false;
         $cached    = $this->get_notice_cache_value( $cache_key, $found );
 
@@ -1088,10 +1084,9 @@ class Ecosplay_Referrals_Service {
             return (bool) $cached;
         }
 
-        $seen = $this->store->has_seen_notification( $user_id, $message_ts );
+        $seen = $this->store->has_seen_notification( $user_id );
 
         $this->set_notice_cache_value( $cache_key, $seen ? 1 : 0 );
-        $this->set_notice_cache_value( $this->get_notice_stamp_cache_key( $user_id ), $message_stamp );
 
         return $seen;
     }
@@ -1110,15 +1105,12 @@ class Ecosplay_Referrals_Service {
             return false;
         }
 
-        $message_ts    = $this->get_notice_last_updated_at();
-        $message_stamp = $this->normalize_notice_timestamp( $message_ts );
-        $updated       = $this->store->mark_notification_seen( $user_id, $message_ts );
+        $updated = $this->store->mark_notification_seen( $user_id );
 
-        $this->clear_notice_cache( $user_id, $message_stamp );
+        $this->clear_notice_cache( $user_id );
 
         if ( $updated ) {
-            $this->set_notice_cache_value( $this->get_notice_cache_key( $user_id, $message_stamp ), 1 );
-            $this->set_notice_cache_value( $this->get_notice_stamp_cache_key( $user_id ), $message_stamp );
+            $this->set_notice_cache_value( $this->get_notice_cache_key( $user_id ), 1 );
         }
 
         return $updated;
@@ -1200,17 +1192,6 @@ class Ecosplay_Referrals_Service {
     }
 
     /**
-     * Returns the last update timestamp of the floating notice message.
-     *
-     * @return string
-     */
-    public function get_notice_last_updated_at() {
-        $value = apply_filters( 'ecosplay_referrals_notice_last_updated_at', '' );
-
-        return is_string( $value ) ? $value : '';
-    }
-
-    /**
      * Returns the current dismissal version used for guests.
      *
      * @return int
@@ -1239,47 +1220,14 @@ class Ecosplay_Referrals_Service {
     /**
      * Builds a cache key for the notice dismissal state.
      *
-     * @param int    $user_id    User identifier.
-     * @param string $message_ts Notice message timestamp.
-     *
-     * @return string
-     */
-    protected function get_notice_cache_key( $user_id, $message_ts ) {
-        $message_stamp = $this->normalize_notice_timestamp( $message_ts );
-        $version       = $this->get_notice_version();
-
-        return sprintf( 'ecos_ref_notice_seen_%d_%s_%d', (int) $user_id, $message_stamp, $version );
-    }
-
-    /**
-     * Builds a cache key storing the last message timestamp for a user.
-     *
      * @param int $user_id User identifier.
      *
      * @return string
      */
-    protected function get_notice_stamp_cache_key( $user_id ) {
-        return sprintf( 'ecos_ref_notice_seen_stamp_%d', (int) $user_id );
-    }
+    protected function get_notice_cache_key( $user_id ) {
+        $version = $this->get_notice_version();
 
-    /**
-     * Normalizes the notice timestamp for cache storage.
-     *
-     * @param string $message_ts Message timestamp value.
-     *
-     * @return string
-     */
-    protected function normalize_notice_timestamp( $message_ts ) {
-        $message_ts = trim( (string) $message_ts );
-
-        if ( '' === $message_ts ) {
-            return '0';
-        }
-
-        $normalized = preg_replace( '/[^a-zA-Z0-9_]/', '_', $message_ts );
-        $normalized = trim( $normalized, '_' );
-
-        return '' !== $normalized ? $normalized : '0';
+        return sprintf( 'ecos_ref_notice_seen_%s_%d_%d', self::NOTICE_CACHE_SLUG, (int) $user_id, $version );
     }
 
     /**
@@ -1337,38 +1285,12 @@ class Ecosplay_Referrals_Service {
     /**
      * Clears cached dismissal data for a given user.
      *
-     * @param int         $user_id    User identifier.
-     * @param string|null $message_ts Optional message timestamp.
+     * @param int $user_id User identifier.
      *
      * @return void
      */
-    protected function clear_notice_cache( $user_id, $message_ts = null ) {
-        $message_ts = null === $message_ts ? $this->get_notice_last_updated_at() : $message_ts;
-
-        $this->delete_notice_cache_value( $this->get_notice_cache_key( $user_id, $message_ts ) );
-        $this->delete_notice_cache_value( $this->get_notice_stamp_cache_key( $user_id ) );
-    }
-
-    /**
-     * Ensures the cached stamp matches the current notice timestamp.
-     *
-     * @param int    $user_id       User identifier.
-     * @param string $message_stamp Normalized notice timestamp.
-     *
-     * @return void
-     */
-    protected function sync_notice_cache_stamp( $user_id, $message_stamp ) {
-        $stamp_key   = $this->get_notice_stamp_cache_key( $user_id );
-        $found       = false;
-        $cached_stamp = $this->get_notice_cache_value( $stamp_key, $found );
-
-        if ( $found && $cached_stamp !== $message_stamp ) {
-            $this->delete_notice_cache_value( $this->get_notice_cache_key( $user_id, $cached_stamp ) );
-        }
-
-        if ( ! $found || $cached_stamp !== $message_stamp ) {
-            $this->set_notice_cache_value( $stamp_key, $message_stamp );
-        }
+    protected function clear_notice_cache( $user_id ) {
+        $this->delete_notice_cache_value( $this->get_notice_cache_key( $user_id ) );
     }
 
     /**
