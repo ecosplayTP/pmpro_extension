@@ -1339,6 +1339,96 @@ class Ecosplay_Referrals_Service {
     }
 
     /**
+     * Fournit le statut Stripe Connect pour un membre donné.
+     *
+     * @param int $user_id Identifiant du membre.
+     *
+     * @return array<string,mixed>|WP_Error
+     */
+    public function get_member_stripe_status( $user_id ) {
+        $user_id = (int) $user_id;
+
+        if ( $user_id <= 0 || ! $this->is_user_allowed( $user_id ) ) {
+            return new WP_Error( 'ecosplay_referrals_stripe_forbidden', __( 'Accès refusé au statut Stripe.', 'ecosplay-referrals' ) );
+        }
+
+        $referral = $this->store->get_referral_by_user( $user_id );
+
+        if ( ! $referral ) {
+            return new WP_Error( 'ecosplay_referrals_wallet_missing', __( 'Profil de parrainage introuvable.', 'ecosplay-referrals' ) );
+        }
+
+        $account_id = ! empty( $referral->stripe_account_id ) ? (string) $referral->stripe_account_id : '';
+        $errors     = array();
+
+        if ( ! $this->is_stripe_enabled() ) {
+            $message = $this->stripe_disabled_error()->get_error_message();
+
+            return array(
+                'stripe_status'          => 'disabled',
+                'stripe_label'           => $message,
+                'stripe_errors'          => array( $message ),
+                'stripe_account_id'      => $account_id,
+                'stripe_account_missing' => '' === $account_id,
+            );
+        }
+
+        if ( ! $this->stripe_client->is_configured() ) {
+            $message = __( 'Configurez la clé Stripe avant de poursuivre.', 'ecosplay-referrals' );
+
+            return array(
+                'stripe_status'          => 'unconfigured',
+                'stripe_label'           => $message,
+                'stripe_errors'          => array( $message ),
+                'stripe_account_id'      => $account_id,
+                'stripe_account_missing' => '' === $account_id,
+            );
+        }
+
+        $capabilities    = $this->decode_capabilities_field( isset( $referral->stripe_capabilities ) ? $referral->stripe_capabilities : '' );
+        $transfers_status = isset( $capabilities['transfers'] ) ? $capabilities['transfers'] : '';
+        $account          = null;
+
+        if ( '' !== $account_id ) {
+            $account = $this->stripe_client->retrieve_account( $account_id );
+
+            if ( is_wp_error( $account ) ) {
+                $errors[] = $account->get_error_message();
+                $account  = null;
+            } elseif ( is_array( $account ) ) {
+                if ( isset( $account['capabilities'] ) && is_array( $account['capabilities'] ) ) {
+                    $capabilities     = $account['capabilities'];
+                    $transfers_status = isset( $capabilities['transfers'] ) ? $capabilities['transfers'] : $transfers_status;
+                    $this->store->save_stripe_account( $user_id, $account_id, $capabilities );
+                }
+
+                $errors = array_merge( $errors, $this->extract_requirement_messages( $account ) );
+            }
+        }
+
+        if ( is_array( $transfers_status ) ) {
+            if ( ! empty( $transfers_status['active'] ) ) {
+                $transfers_status = 'active';
+            } elseif ( ! empty( $transfers_status['pending'] ) ) {
+                $transfers_status = 'pending';
+            } else {
+                $transfers_status = '';
+            }
+        }
+
+        $state = $this->determine_kyc_state( $referral, $transfers_status, $account );
+        $errors = array_values( array_unique( array_filter( array_map( 'wp_strip_all_tags', $errors ) ) ) );
+
+        return array(
+            'stripe_status'          => $state['status'],
+            'stripe_label'           => $state['label'],
+            'stripe_errors'          => $errors,
+            'stripe_account_id'      => $account_id,
+            'stripe_account_missing' => '' === $account_id,
+        );
+    }
+
+    /**
      * Rassemble les informations de portefeuille pour un membre.
      *
      * @param int $user_id Identifiant du membre.
@@ -1408,6 +1498,11 @@ class Ecosplay_Referrals_Service {
         }
 
         $wallet_base['can_transfer'] = $wallet_base['can_request_reward'];
+        $stripe_status               = $this->get_member_stripe_status( $user_id );
+
+        if ( ! is_wp_error( $stripe_status ) ) {
+            $wallet_base = array_merge( $wallet_base, $stripe_status );
+        }
 
         return $wallet_base;
     }
