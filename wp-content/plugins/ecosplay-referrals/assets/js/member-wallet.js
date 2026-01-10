@@ -73,6 +73,7 @@
             available_balance: 'available_balance_formatted',
             association_label: 'association_label',
             tremendous_balance_label: 'tremendous_balance_label',
+            stripe_label: 'stripe_label',
         };
 
         Object.keys(mapping).forEach((key) => {
@@ -117,6 +118,7 @@
         }
 
         updateAssociationErrors(container, wallet);
+        updateStripeErrors(container, wallet);
     };
 
     /**
@@ -137,6 +139,32 @@
         }
 
         wallet.association_errors.forEach((message) => {
+            const item = document.createElement('li');
+            item.textContent = message;
+            list.appendChild(item);
+        });
+
+        list.style.display = 'block';
+    };
+
+    /**
+     * Rafraîchit la liste des erreurs Stripe.
+     */
+    const updateStripeErrors = (container, wallet) => {
+        const list = container.querySelector('[data-wallet-field="stripe_errors"]');
+
+        if (!list) {
+            return;
+        }
+
+        list.innerHTML = '';
+
+        if (!wallet.stripe_errors || !wallet.stripe_errors.length) {
+            list.style.display = 'none';
+            return;
+        }
+
+        wallet.stripe_errors.forEach((message) => {
             const item = document.createElement('li');
             item.textContent = message;
             list.appendChild(item);
@@ -195,6 +223,7 @@
         const associationSection = wallet.querySelector('.ecos-referral-wallet__association');
         const associateBtn = wallet.querySelector('[data-wallet-action="associate"]');
         const refreshBtn = wallet.querySelector('[data-wallet-action="refresh"]');
+        const stripeBtn = wallet.querySelector('[data-wallet-action="stripe-link"]');
         const rewardForm = wallet.querySelector('[data-wallet-form="reward"]');
 
         if (associationSection && associateBtn) {
@@ -305,6 +334,40 @@
                     })
                     .catch(() => {
                         submitButton.disabled = false;
+                        renderNotice(wallet, 'error', config.i18n.genericError);
+                    });
+            });
+        }
+
+        if (stripeBtn) {
+            stripeBtn.addEventListener('click', (event) => {
+                event.preventDefault();
+                stripeBtn.disabled = true;
+                renderNotice(wallet, 'success', '');
+
+                request(config.actions.stripeLink, {
+                    return_url: window.location.href,
+                    refresh_url: window.location.href,
+                })
+                    .then((response) => {
+                        stripeBtn.disabled = false;
+
+                        if (!response) {
+                            renderNotice(wallet, 'error', config.i18n.genericError);
+                            return;
+                        }
+
+                        const message = response.data && response.data.message ? response.data.message : '';
+
+                        if (!response.success || !response.data || !response.data.url) {
+                            renderNotice(wallet, 'error', message || config.i18n.genericError);
+                            return;
+                        }
+
+                        window.location.href = response.data.url;
+                    })
+                    .catch(() => {
+                        stripeBtn.disabled = false;
                         renderNotice(wallet, 'error', config.i18n.genericError);
                     });
             });

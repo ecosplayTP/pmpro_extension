@@ -43,10 +43,12 @@ class Ecosplay_Referrals_Member_Wallet {
         add_action( 'wp_ajax_ecos_referrals_wallet_associate', array( $this, 'handle_association_request' ) );
         add_action( 'wp_ajax_ecos_referrals_request_reward', array( $this, 'handle_reward_request' ) );
         add_action( 'wp_ajax_ecos_referrals_wallet_refresh', array( $this, 'handle_refresh_request' ) );
+        add_action( 'wp_ajax_ecos_referrals_wallet_stripe_link', array( $this, 'handle_stripe_link_request' ) );
 
         add_action( 'wp_ajax_nopriv_ecos_referrals_wallet_associate', array( $this, 'reject_unauthenticated_request' ) );
         add_action( 'wp_ajax_nopriv_ecos_referrals_request_reward', array( $this, 'reject_unauthenticated_request' ) );
         add_action( 'wp_ajax_nopriv_ecos_referrals_wallet_refresh', array( $this, 'reject_unauthenticated_request' ) );
+        add_action( 'wp_ajax_nopriv_ecos_referrals_wallet_stripe_link', array( $this, 'reject_unauthenticated_request' ) );
     }
 
     /**
@@ -113,6 +115,19 @@ class Ecosplay_Referrals_Member_Wallet {
                     <button class="button" data-wallet-action="refresh" type="button" style="<?php echo $payload['is_associated'] ? '' : 'display:none;'; ?>"><?php esc_html_e( 'Rafraîchir mon solde Tremendous', 'ecosplay-referrals' ); ?></button>
                 </div>
             <?php endif; ?>
+
+            <div class="ecos-referral-wallet__association ecos-referral-wallet__association--stripe">
+                <h4><?php esc_html_e( 'Compte Stripe', 'ecosplay-referrals' ); ?></h4>
+                <p data-wallet-field="stripe_label"><?php echo esc_html( $payload['stripe_label'] ); ?></p>
+                <ul class="ecos-referral-wallet__association-errors" data-wallet-field="stripe_errors" style="<?php echo empty( $payload['stripe_errors'] ) ? 'display:none;' : ''; ?>">
+                    <?php foreach ( $payload['stripe_errors'] as $error ) : ?>
+                        <li><?php echo esc_html( $error ); ?></li>
+                    <?php endforeach; ?>
+                </ul>
+                <div class="ecos-referral-wallet__actions">
+                    <button class="button" data-wallet-action="stripe-link" type="button"><?php esc_html_e( 'Connecter/Configurer mon compte Stripe', 'ecosplay-referrals' ); ?></button>
+                </div>
+            </div>
 
             <div data-wallet-section="reward" style="<?php echo $payload['can_request_reward'] ? '' : 'display:none;'; ?>">
                 <form class="ecos-referral-wallet__transfer" data-wallet-form="reward">
@@ -192,6 +207,7 @@ class Ecosplay_Referrals_Member_Wallet {
                     'associate' => 'ecos_referrals_wallet_associate',
                     'reward'    => 'ecos_referrals_request_reward',
                     'refresh'   => 'ecos_referrals_wallet_refresh',
+                    'stripeLink' => 'ecos_referrals_wallet_stripe_link',
                 ),
                 'i18n'    => array(
                     'genericError'      => __( 'Une erreur est survenue. Veuillez réessayer.', 'ecosplay-referrals' ),
@@ -228,6 +244,69 @@ class Ecosplay_Referrals_Member_Wallet {
         if ( has_shortcode( $post->post_content, 'ecos_referral_wallet' ) ) {
             $this->should_enqueue = true;
         }
+    }
+
+    /**
+     * Génère un lien Stripe Connect pour l\'onboarding du membre.
+     *
+     * @return void
+     */
+    public function handle_stripe_link_request() {
+        $user_id = $this->resolve_authorized_user( true );
+
+        if ( ! $user_id ) {
+            return;
+        }
+
+        check_ajax_referer( 'ecos_referral_wallet' );
+
+        $return_url  = isset( $_POST['return_url'] ) ? esc_url_raw( wp_unslash( $_POST['return_url'] ) ) : '';
+        $refresh_url = isset( $_POST['refresh_url'] ) ? esc_url_raw( wp_unslash( $_POST['refresh_url'] ) ) : '';
+        $fallback_url = wp_get_referer();
+
+        if ( '' === $return_url && $fallback_url ) {
+            $return_url = esc_url_raw( $fallback_url );
+        }
+
+        if ( '' === $refresh_url && $fallback_url ) {
+            $refresh_url = esc_url_raw( $fallback_url );
+        }
+
+        if ( '' === $return_url ) {
+            $return_url = home_url( '/' );
+        }
+
+        if ( '' === $refresh_url ) {
+            $refresh_url = $return_url;
+        }
+
+        $link = $this->service->generate_account_link( $user_id, $return_url, $refresh_url );
+
+        if ( is_wp_error( $link ) ) {
+            wp_send_json_error(
+                array(
+                    'message' => $link->get_error_message(),
+                ),
+                400
+            );
+        }
+
+        $link_url = isset( $link['url'] ) ? esc_url_raw( $link['url'] ) : '';
+
+        if ( '' === $link_url ) {
+            wp_send_json_error(
+                array(
+                    'message' => __( 'Stripe n’a pas renvoyé de lien valide.', 'ecosplay-referrals' ),
+                ),
+                400
+            );
+        }
+
+        wp_send_json_success(
+            array(
+                'url' => $link_url,
+            )
+        );
     }
 
     /**
@@ -410,6 +489,11 @@ class Ecosplay_Referrals_Member_Wallet {
             'tremendous_balance'          => $tremendous_balance,
             'tremendous_balance_formatted'=> null === $tremendous_balance ? '' : $format( $tremendous_balance ),
             'tremendous_balance_label'    => null === $tremendous_balance ? '' : sprintf( __( 'Solde Tremendous disponible : %s', 'ecosplay-referrals' ), $format( $tremendous_balance ) ),
+            'stripe_status'               => isset( $wallet['stripe_status'] ) ? (string) $wallet['stripe_status'] : '',
+            'stripe_label'                => isset( $wallet['stripe_label'] ) ? (string) $wallet['stripe_label'] : '',
+            'stripe_errors'               => array_map( 'wp_strip_all_tags', isset( $wallet['stripe_errors'] ) ? (array) $wallet['stripe_errors'] : array() ),
+            'stripe_account_id'           => isset( $wallet['stripe_account_id'] ) ? (string) $wallet['stripe_account_id'] : '',
+            'stripe_account_missing'      => ! empty( $wallet['stripe_account_missing'] ),
         );
 
         $payload['can_transfer'] = isset( $wallet['can_transfer'] ) ? ! empty( $wallet['can_transfer'] ) : $payload['can_request_reward'];
