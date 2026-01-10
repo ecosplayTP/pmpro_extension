@@ -29,8 +29,55 @@ class Ecosplay_Referrals_Shortcodes {
     public function __construct( Ecosplay_Referrals_Service $service ) {
         $this->service = $service;
 
+        add_shortcode( 'ecos_referral_code', array( $this, 'render_code' ) );
         add_shortcode( 'ecos_referral_points', array( $this, 'render_points' ) );
         add_shortcode( 'ecos_referral_link', array( $this, 'render_link' ) );
+    }
+
+    /**
+     * Renders the referral code with a copy button for premium members.
+     *
+     * @param array<string,mixed> $atts Shortcode attributes.
+     *
+     * @return string
+     */
+    public function render_code( $atts = array() ) {
+        $user_id = $this->resolve_authorized_user();
+
+        if ( ! $user_id ) {
+            return '';
+        }
+
+        $code = $this->service->get_member_code( $user_id );
+
+        if ( '' === $code ) {
+            return '';
+        }
+
+        $atts = shortcode_atts(
+            array(
+                'button_text' => __( 'Copier le code', 'ecosplay-referrals' ),
+                'copied_text' => __( 'Code copié', 'ecosplay-referrals' ),
+            ),
+            $atts,
+            'ecos_referral_code'
+        );
+
+        $button_label = wp_strip_all_tags( (string) $atts['button_text'] );
+        $copied_label = wp_strip_all_tags( (string) $atts['copied_text'] );
+        $button_text  = esc_html( $button_label );
+        $button_attr  = esc_attr( $button_label );
+        $copied_attr  = esc_attr( $copied_label );
+
+        $this->enqueue_code_assets();
+
+        return sprintf(
+            '<div class="ecos-referral-code" data-ecos-referral-code><span class="ecos-referral-code__value" data-ecos-referral-value>%1$s</span><button type="button" class="ecos-referral-code__copy" data-ecos-referral-copy data-ecos-referral-label="%2$s" data-ecos-referral-copied-label="%3$s">%4$s</button><span class="ecos-referral-code__status screen-reader-text" data-ecos-referral-status aria-live="polite"></span></div>',
+            esc_html( $code ),
+            $button_attr,
+            $copied_attr,
+            $button_text
+        );
     }
 
     /**
@@ -98,7 +145,7 @@ class Ecosplay_Referrals_Shortcodes {
 
         $atts = shortcode_atts(
             array(
-                'url'   => home_url( '/' ),
+                'url'   => home_url( '/paiement-dadhesion/' ),
                 'text'  => '',
                 'param' => 'ref',
             ),
@@ -157,5 +204,24 @@ class Ecosplay_Referrals_Shortcodes {
         }
 
         return (int) $user_id;
+    }
+
+    /**
+     * Enqueues the front-end asset used to copy referral codes.
+     *
+     * @return void
+     */
+    protected function enqueue_code_assets() {
+        if ( wp_script_is( 'ecosplay-referrals-code-copy', 'enqueued' ) ) {
+            return;
+        }
+
+        wp_enqueue_script(
+            'ecosplay-referrals-code-copy',
+            ECOSPLAY_REFERRALS_URL . 'assets/js/referral-code.js',
+            array(),
+            ECOSPLAY_REFERRALS_VERSION,
+            true
+        );
     }
 }

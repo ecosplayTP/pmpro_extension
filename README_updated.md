@@ -14,7 +14,7 @@ Ce projet fournit le plugin WordPress **ECOSplay Referrals** destiné à étendr
   - *Statistiques* : synthèse hebdomadaire/mensuelle des conversions et montants remisés.
   - *Réglages* : configuration des montants de remise et de récompense via la Settings API.
 - **Notification flottante front-end** : bannière AJAX avec cookie et persistance par utilisateur, réinitialisable depuis l'admin.
-- **Shortcodes premium** : `[ecos_referral_points]` pour afficher les crédits gagnés et `[ecos_referral_link]` pour générer un lien de parrainage personnalisé.
+- **Shortcodes premium** : `[ecos_referral_points]` pour afficher les crédits gagnés, `[ecos_referral_link]` pour générer un lien de parrainage vers la page d’adhésion, et `[ecos_referral_code]` pour afficher le code avec un bouton de copie.
 - **Pré-remplissage marketing** : capture du paramètre `?ref=` et mémorisation temporaire pour les conversions ultérieures.
 
 ## Tests
@@ -34,7 +34,7 @@ wp-content/
         │   ├── index.php                     # Garde de sécurité pour l'accès direct.
         │   ├── class-referrals-store.php     # Accès aux tables personnalisées et opérations SQL.
         │   ├── class-referrals-service.php   # Logique métier du programme de parrainage.
-        │   └── class-referrals-shortcodes.php # Shortcodes front-end pour points et lien.
+        │   └── class-referrals-shortcodes.php # Shortcodes front-end pour points, lien et code de parrainage.
         ├── admin/
         │   ├── index.php                     # Protection d'accès direct.
         │   ├── class-admin-menu.php          # Déclaration du sous-menu et dispatch des onglets.
@@ -58,5 +58,6 @@ wp-content/
             └── js/
                 ├── index.php                 # Garde d'accès.
                 ├── admin.js                  # Interactions JS pour les écrans d'administration.
-                └── floating-notice.js        # Script de gestion de la notification flottante.
+                ├── floating-notice.js        # Script de gestion de la notification flottante.
+                └── referral-code.js          # Copie du code de parrainage depuis le front-end.
 ```
