@@ -40,6 +40,24 @@ function ecosplay_referrals_define_constants() {
 ecosplay_referrals_define_constants();
 
 /**
+ * Retourne une version d'asset basée sur sa date de modification.
+ *
+ * @param string $relative_path Chemin relatif de l'asset dans le plugin.
+ *
+ * @return string
+ */
+function ecosplay_referrals_get_asset_version( $relative_path ) {
+    $relative_path = ltrim( (string) $relative_path, '/' );
+    $asset_path    = ECOSPLAY_REFERRALS_DIR . $relative_path;
+
+    if ( is_readable( $asset_path ) ) {
+        return (string) filemtime( $asset_path );
+    }
+
+    return ECOSPLAY_REFERRALS_VERSION;
+}
+
+/**
  * Autoloads plugin classes located in the plugin subdirectories.
  *
  * @param string $class Requested class name.

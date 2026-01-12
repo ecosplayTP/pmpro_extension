@@ -220,7 +220,7 @@ class Ecosplay_Referrals_Shortcodes {
             'ecosplay-referrals-code-copy',
             ECOSPLAY_REFERRALS_URL . 'assets/js/referral-code.js',
             array(),
-            ECOSPLAY_REFERRALS_VERSION,
+            ecosplay_referrals_get_asset_version( 'assets/js/referral-code.js' ),
             true
         );
     }
