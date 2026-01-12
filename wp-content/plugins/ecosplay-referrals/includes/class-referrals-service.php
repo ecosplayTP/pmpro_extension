@@ -340,6 +340,7 @@ class Ecosplay_Referrals_Service {
                 'type'         => 'express',
                 'country'      => $this->guess_country_code(),
                 'email'        => $user->user_email,
+                'business_type' => 'individual',
                 'capabilities' => array( 'transfers' => array( 'requested' => true ) ),
                 'metadata'     => array( 'user_id' => $user_id, 'site' => home_url() ),
             ),
