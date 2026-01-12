@@ -75,6 +75,7 @@ class Ecosplay_Referrals_Member_Wallet {
         }
 
         $this->should_enqueue = true;
+        $this->maybe_enqueue_assets();
 
         $payload = $this->prepare_wallet_payload( $wallet );
 
@@ -182,6 +183,28 @@ class Ecosplay_Referrals_Member_Wallet {
             return;
         }
 
+        $this->enqueue_wallet_assets();
+    }
+
+    /**
+     * Charge les assets si le hook d'enqueue a déjà été exécuté.
+     *
+     * @return void
+     */
+    protected function maybe_enqueue_assets() {
+        if ( ! did_action( 'wp_enqueue_scripts' ) ) {
+            return;
+        }
+
+        $this->enqueue_wallet_assets();
+    }
+
+    /**
+     * Enqueue les feuilles de style, scripts et données JS du portefeuille.
+     *
+     * @return void
+     */
+    protected function enqueue_wallet_assets() {
         wp_enqueue_style(
             'ecosplay-referrals-member-wallet',
             ECOSPLAY_REFERRALS_URL . 'assets/css/member-wallet.css',
