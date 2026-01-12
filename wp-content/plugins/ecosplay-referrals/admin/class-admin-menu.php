@@ -185,8 +185,8 @@ class Ecosplay_Referrals_Admin_Menu {
                 'ajaxUrl'                   => admin_url( 'admin-ajax.php' ),
                 'confirmRegenerateAll'      => __( 'Êtes-vous sûr de vouloir régénérer tous les codes ? Cette action est irréversible.', 'ecosplay-referrals' ),
                 'confirmResetNotifications' => __( 'Confirmez-vous la réinitialisation des notifications ?', 'ecosplay-referrals' ),
-                'stripeDiagnosticAction'    => 'ecos_referrals_stripe_diagnostic',
-                'stripeDiagnosticNonce'     => wp_create_nonce( 'ecos_referrals_stripe_diagnostic' ),
+                'stripeDiagnosticAction'    => 'ecosplay_referrals_stripe_test',
+                'stripeDiagnosticNonce'     => wp_create_nonce( 'ecosplay_referrals_stripe_test' ),
                 'stripeDiagnosticRunning'   => __( 'Diagnostic Stripe en cours...', 'ecosplay-referrals' ),
                 'stripeDiagnosticError'     => __( 'Le diagnostic Stripe n’a pas pu être chargé.', 'ecosplay-referrals' ),
             )

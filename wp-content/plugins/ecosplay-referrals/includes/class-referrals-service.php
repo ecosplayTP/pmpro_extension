@@ -106,6 +106,131 @@ class Ecosplay_Referrals_Service {
     }
 
     /**
+     * Runs read-only Stripe diagnostics for administrative reporting.
+     *
+     * @return array<string,mixed>
+     */
+    public function run_stripe_diagnostics() {
+        $checks = array();
+        $result = array(
+            'checks'       => array(),
+            'capabilities' => array(),
+        );
+
+        $stripe_enabled = $this->is_stripe_enabled();
+        $configured     = $this->stripe_client->is_configured();
+
+        $checks[] = array(
+            'label'   => __( 'Stripe activé', 'ecosplay-referrals' ),
+            'ok'      => $stripe_enabled,
+            'message' => $stripe_enabled
+                ? __( 'L’option Stripe est active.', 'ecosplay-referrals' )
+                : __( 'Activez Stripe pour poursuivre.', 'ecosplay-referrals' ),
+        );
+
+        $checks[] = array(
+            'label'   => __( 'Clé secrète configurée', 'ecosplay-referrals' ),
+            'ok'      => $configured,
+            'message' => $configured
+                ? __( 'La clé secrète est enregistrée.', 'ecosplay-referrals' )
+                : __( 'Ajoutez la clé secrète Stripe.', 'ecosplay-referrals' ),
+        );
+
+        if ( ! $stripe_enabled || ! $configured ) {
+            $result['checks'] = $checks;
+            return $result;
+        }
+
+        $account = $this->stripe_client->get_account();
+
+        if ( is_wp_error( $account ) ) {
+            $checks[] = array(
+                'label'   => __( 'Compte plateforme Stripe', 'ecosplay-referrals' ),
+                'ok'      => false,
+                'message' => $account->get_error_message(),
+            );
+
+            $result['checks'] = $checks;
+            return $result;
+        }
+
+        $checks[] = array(
+            'label'   => __( 'Compte plateforme Stripe', 'ecosplay-referrals' ),
+            'ok'      => true,
+            'message' => __( 'Compte plateforme accessible.', 'ecosplay-referrals' ),
+        );
+
+        $balance = $this->stripe_client->get_balance();
+
+        if ( is_wp_error( $balance ) ) {
+            $checks[] = array(
+                'label'   => __( 'Solde Stripe', 'ecosplay-referrals' ),
+                'ok'      => false,
+                'message' => $balance->get_error_message(),
+            );
+
+            $result['checks'] = $checks;
+            return $result;
+        }
+
+        $checks[] = array(
+            'label'   => __( 'Solde Stripe', 'ecosplay-referrals' ),
+            'ok'      => true,
+            'message' => __( 'Solde Stripe récupéré.', 'ecosplay-referrals' ),
+        );
+
+        $referral = $this->store->get_referral_with_stripe_account();
+
+        if ( ! $referral || empty( $referral->stripe_account_id ) ) {
+            $checks[] = array(
+                'label'   => __( 'Compte Connect lié', 'ecosplay-referrals' ),
+                'ok'      => false,
+                'message' => __( 'Aucun membre avec compte Stripe Connect enregistré.', 'ecosplay-referrals' ),
+            );
+
+            $result['checks'] = $checks;
+            return $result;
+        }
+
+        $connect_account = $this->stripe_client->retrieve_account( $referral->stripe_account_id );
+
+        if ( is_wp_error( $connect_account ) ) {
+            $checks[] = array(
+                'label'   => __( 'Compte Connect lié', 'ecosplay-referrals' ),
+                'ok'      => false,
+                'message' => $connect_account->get_error_message(),
+            );
+
+            $result['checks'] = $checks;
+            return $result;
+        }
+
+        $checks[] = array(
+            'label'   => __( 'Compte Connect lié', 'ecosplay-referrals' ),
+            'ok'      => true,
+            'message' => __( 'Accès au compte Connect confirmé.', 'ecosplay-referrals' ),
+        );
+
+        $capabilities = isset( $connect_account['capabilities'] ) && is_array( $connect_account['capabilities'] )
+            ? $connect_account['capabilities']
+            : array();
+        $result['capabilities'] = $capabilities;
+
+        $transfers_status = isset( $capabilities['transfers'] ) ? (string) $capabilities['transfers'] : '';
+
+        $checks[] = array(
+            'label'   => __( 'Capacité transfers', 'ecosplay-referrals' ),
+            'ok'      => '' !== $transfers_status,
+            'message' => '' !== $transfers_status
+                ? sprintf( __( 'Statut : %s', 'ecosplay-referrals' ), $transfers_status )
+                : __( 'Capacité transfers indisponible.', 'ecosplay-referrals' ),
+        );
+
+        $result['checks'] = $checks;
+        return $result;
+    }
+
+    /**
      * Indicates whether Tremendous-specific features should be executed.
      *
      * @return bool

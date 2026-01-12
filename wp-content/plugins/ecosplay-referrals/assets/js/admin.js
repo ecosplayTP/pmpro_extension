@@ -123,7 +123,13 @@
                         return;
                     }
 
-                    $report.text( strings.stripeDiagnosticError || '' );
+                    var errorMessage = strings.stripeDiagnosticError || '';
+
+                    if ( response && response.data && response.data.message ) {
+                        errorMessage = response.data.message;
+                    }
+
+                    $report.text( errorMessage );
                 } )
                 .fail( function () {
                     $report.text( strings.stripeDiagnosticError || '' );

@@ -759,6 +759,20 @@ class Ecosplay_Referrals_Store {
     }
 
     /**
+     * Retrieves any referral entry with a Stripe account attached.
+     *
+     * @return object|null
+     */
+    public function get_referral_with_stripe_account() {
+        global $wpdb;
+
+        return $wpdb->get_row(
+            "SELECT id, user_id, code, earned_credits, total_paid, stripe_account_id, stripe_capabilities, tremendous_organization_id, tremendous_status, tremendous_status_message, tremendous_balance, is_active, notification_state, last_regenerated_at, created_at, updated_at
+             FROM {$this->referrals_table()} WHERE stripe_account_id IS NOT NULL AND stripe_account_id != '' LIMIT 1"
+        );
+    }
+
+    /**
      * Retrieves payout ledger rows for a specific user.
      *
      * @param int $user_id WordPress user identifier.

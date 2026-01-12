@@ -78,6 +78,15 @@ class Ecosplay_Referrals_Stripe_Client {
     }
 
     /**
+     * Retrieves the platform Stripe account details.
+     *
+     * @return array<string,mixed>|WP_Error
+     */
+    public function get_account() {
+        return $this->request( 'GET', '/v1/account' );
+    }
+
+    /**
      * Generates an account link for onboarding or refresh flows.
      *
      * @param string               $account_id Stripe account identifier.

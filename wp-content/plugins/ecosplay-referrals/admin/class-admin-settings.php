@@ -17,7 +17,7 @@ class Ecosplay_Referrals_Admin_Settings {
     /**
      * AJAX action used for Stripe diagnostics.
      */
-    const STRIPE_DIAGNOSTIC_ACTION = 'ecos_referrals_stripe_diagnostic';
+    const STRIPE_DIAGNOSTIC_ACTION = 'ecosplay_referrals_stripe_test';
 
     /**
      * Option storage key.
@@ -242,116 +242,9 @@ class Ecosplay_Referrals_Admin_Settings {
             wp_send_json_error( array( 'message' => __( 'Accès refusé.', 'ecosplay-referrals' ) ) );
         }
 
-        wp_send_json_success(
-            array(
-                'checks' => $this->get_stripe_diagnostic_checks(),
-            )
-        );
-    }
+        $report = $this->service->run_stripe_diagnostics();
 
-    /**
-     * Builds the Stripe diagnostics checklist.
-     *
-     * @return array<int,array{label:string,ok:bool,message:string}>
-     */
-    protected function get_stripe_diagnostic_checks() {
-        $checks         = array();
-        $stripe_enabled = function_exists( 'ecosplay_referrals_is_stripe_enabled' ) ? ecosplay_referrals_is_stripe_enabled() : false;
-        $secret         = function_exists( 'ecosplay_referrals_get_stripe_secret' ) ? ecosplay_referrals_get_stripe_secret() : '';
-        $has_secret     = '' !== trim( (string) $secret );
-
-        $checks[] = array(
-            'label'   => __( 'Stripe activé', 'ecosplay-referrals' ),
-            'ok'      => $stripe_enabled,
-            'message' => $stripe_enabled
-                ? __( 'L’option Stripe est active.', 'ecosplay-referrals' )
-                : __( 'Activez Stripe pour poursuivre.', 'ecosplay-referrals' ),
-        );
-
-        $checks[] = array(
-            'label'   => __( 'Clé Stripe configurée', 'ecosplay-referrals' ),
-            'ok'      => $has_secret,
-            'message' => $has_secret
-                ? __( 'La clé secrète est enregistrée.', 'ecosplay-referrals' )
-                : __( 'Ajoutez la clé secrète Stripe.', 'ecosplay-referrals' ),
-        );
-
-        if ( ! $stripe_enabled || ! $has_secret ) {
-            $checks[] = array(
-                'label'   => __( 'Connexion API Stripe', 'ecosplay-referrals' ),
-                'ok'      => false,
-                'message' => __( 'Activez Stripe et configurez la clé avant de tester l’API.', 'ecosplay-referrals' ),
-            );
-
-            return $checks;
-        }
-
-        $client  = new Ecosplay_Referrals_Stripe_Client( $secret );
-        $balance = $client->get_balance();
-
-        if ( is_wp_error( $balance ) ) {
-            $checks[] = array(
-                'label'   => __( 'Connexion API Stripe', 'ecosplay-referrals' ),
-                'ok'      => false,
-                'message' => $balance->get_error_message(),
-            );
-
-            return $checks;
-        }
-
-        $checks[] = array(
-            'label'   => __( 'Connexion API Stripe', 'ecosplay-referrals' ),
-            'ok'      => true,
-            'message' => __( 'Connexion réussie.', 'ecosplay-referrals' ),
-        );
-
-        $available = $this->get_stripe_available_balance( $balance, 'eur' );
-
-        $checks[] = array(
-            'label'   => __( 'Solde disponible', 'ecosplay-referrals' ),
-            'ok'      => null !== $available,
-            'message' => null === $available
-                ? __( 'Solde indisponible dans la réponse Stripe.', 'ecosplay-referrals' )
-                : sprintf( __( '%s € disponibles.', 'ecosplay-referrals' ), number_format_i18n( $available, 2 ) ),
-        );
-
-        return $checks;
-    }
-
-    /**
-     * Extracts the available balance from a Stripe balance payload.
-     *
-     * @param array<string,mixed> $balance  Stripe balance payload.
-     * @param string              $currency Currency to locate.
-     *
-     * @return float|null
-     */
-    protected function get_stripe_available_balance( array $balance, $currency ) {
-        if ( ! isset( $balance['available'] ) || ! is_array( $balance['available'] ) ) {
-            return null;
-        }
-
-        $currency = strtolower( (string) $currency );
-
-        foreach ( $balance['available'] as $entry ) {
-            if ( ! is_array( $entry ) ) {
-                continue;
-            }
-
-            if ( ! isset( $entry['currency'] ) || strtolower( (string) $entry['currency'] ) !== $currency ) {
-                continue;
-            }
-
-            $amount = isset( $entry['amount'] ) ? floatval( $entry['amount'] ) : null;
-
-            if ( null === $amount ) {
-                return null;
-            }
-
-            return round( $amount / 100, 2 );
-        }
-
-        return null;
+        wp_send_json_success( $report );
     }
 
     /**
