@@ -216,7 +216,7 @@ class Ecosplay_Referrals_Member_Wallet {
             'ecosplay-referrals-member-wallet',
             ECOSPLAY_REFERRALS_URL . 'assets/js/member-wallet.js',
             array(),
-            ECOSPLAY_REFERRALS_VERSION,
+            ecosplay_referrals_get_asset_version( 'assets/js/member-wallet.js' ),
             true
         );
 

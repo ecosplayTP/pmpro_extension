@@ -68,7 +68,7 @@ class Ecosplay_Referrals_Floating_Notice {
             'ecosplay-referrals-floating-notice',
             ECOSPLAY_REFERRALS_URL . 'assets/js/floating-notice.js',
             array(),
-            ECOSPLAY_REFERRALS_VERSION,
+            ecosplay_referrals_get_asset_version( 'assets/js/floating-notice.js' ),
             true
         );
 

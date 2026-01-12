@@ -160,9 +160,6 @@ class Ecosplay_Referrals_Admin_Menu {
             return;
         }
 
-        $admin_js_path    = ECOSPLAY_REFERRALS_ASSETS . 'js/admin.js';
-        $admin_js_version = is_readable( $admin_js_path ) ? (string) filemtime( $admin_js_path ) : ECOSPLAY_REFERRALS_VERSION;
-
         wp_enqueue_style(
             'ecos-referrals-admin',
             ECOSPLAY_REFERRALS_URL . 'assets/css/admin.css',
@@ -174,7 +171,7 @@ class Ecosplay_Referrals_Admin_Menu {
             'ecos-referrals-admin',
             ECOSPLAY_REFERRALS_URL . 'assets/js/admin.js',
             array( 'jquery' ),
-            $admin_js_version,
+            ecosplay_referrals_get_asset_version( 'assets/js/admin.js' ),
             true
         );
 
