@@ -1701,12 +1701,16 @@ class Ecosplay_Referrals_Service {
             }
         }
 
-        $wallet_base['can_transfer'] = $wallet_base['can_request_reward'];
         $stripe_status               = $this->get_member_stripe_status( $user_id );
+        $stripe_ready                = false;
 
         if ( ! is_wp_error( $stripe_status ) ) {
             $wallet_base = array_merge( $wallet_base, $stripe_status );
+            $stripe_ready = isset( $wallet_base['stripe_status'] ) && 'active' === $wallet_base['stripe_status'];
         }
+
+        $wallet_base['can_transfer']       = $stripe_ready;
+        $wallet_base['can_request_reward'] = $wallet_base['can_request_reward'] || $stripe_ready;
 
         return $wallet_base;
     }
@@ -2090,7 +2094,7 @@ class Ecosplay_Referrals_Service {
      *
      * @return bool
      */
-    protected function is_tremendous_ready_status( $status ) {
+    public function is_tremendous_ready_status( $status ) {
         $status = strtolower( (string) $status );
 
         return in_array( $status, array( 'approved', 'active', 'registered' ), true );

@@ -405,7 +405,7 @@ class Ecosplay_Referrals_Member_Wallet {
     }
 
     /**
-     * Traite la demande de récompense Tremendous depuis l\'interface membre.
+     * Traite la demande de récompense (Tremendous ou Stripe) depuis l\'interface membre.
      *
      * @return void
      */
@@ -430,7 +430,51 @@ class Ecosplay_Referrals_Member_Wallet {
             );
         }
 
-        $result = $this->service->request_tremendous_reward( $user_id, $amount );
+        $wallet = $this->service->get_member_wallet( $user_id );
+
+        if ( is_wp_error( $wallet ) ) {
+            wp_send_json_error(
+                array(
+                    'message' => $wallet->get_error_message(),
+                ),
+                400
+            );
+        }
+
+        $currency        = isset( $wallet['currency'] ) ? strtolower( (string) $wallet['currency'] ) : 'eur';
+        $tremendous_ready = ! empty( $wallet['tremendous_enabled'] )
+            && ! empty( $wallet['is_associated'] )
+            && $this->service->is_tremendous_ready_status( isset( $wallet['association_status'] ) ? $wallet['association_status'] : '' );
+        $stripe_ready = ! empty( $wallet['stripe_status'] ) && 'active' === $wallet['stripe_status'];
+
+        if ( $tremendous_ready ) {
+            $result = $this->service->request_tremendous_reward( $user_id, $amount );
+        } elseif ( $stripe_ready ) {
+            $result = $this->service->handle_withdraw_request( $user_id, $amount, $currency );
+        } else {
+            $message = '';
+
+            if ( ! empty( $wallet['tremendous_enabled'] ) ) {
+                $message = isset( $wallet['association_label'] ) ? (string) $wallet['association_label'] : '';
+            }
+
+            if ( '' === $message ) {
+                if ( ! empty( $wallet['stripe_errors'] ) ) {
+                    $message = (string) $wallet['stripe_errors'][0];
+                } elseif ( ! empty( $wallet['stripe_label'] ) ) {
+                    $message = (string) $wallet['stripe_label'];
+                } else {
+                    $message = __( 'Votre compte Stripe n’est pas prêt pour recevoir un virement.', 'ecosplay-referrals' );
+                }
+            }
+
+            wp_send_json_error(
+                array(
+                    'message' => $message,
+                ),
+                400
+            );
+        }
 
         if ( is_wp_error( $result ) ) {
             wp_send_json_error(
