@@ -88,6 +88,84 @@ class Ecosplay_Referrals_Service {
         add_action( 'ecosplay_referrals_request_payout', array( $this, 'handle_withdraw_request' ), 10, 4 );
         add_action( 'ecosplay_referrals_admin_batch_payout', array( $this, 'handle_batch_payout' ), 10, 4 );
         add_action( 'ecosplay_referrals_daily_balance_check', array( $this, 'run_daily_balance_check' ) );
+        add_filter( 'ecosplay_referrals_discount_amount', array( $this, 'filter_discount_amount' ) );
+        add_filter( 'ecosplay_referrals_reward_amount', array( $this, 'filter_reward_amount' ) );
+        add_filter( 'ecosplay_referrals_allowed_levels', array( $this, 'filter_allowed_levels' ) );
+        add_filter( 'ecosplay_referrals_notice_message', array( $this, 'filter_notice_message' ) );
+        add_filter( 'ecosplay_referrals_balance_alert_threshold', array( $this, 'filter_balance_threshold' ) );
+    }
+
+    /**
+     * Returns a stored option value or a fallback.
+     *
+     * @param string $key     Option key.
+     * @param mixed  $default Default value when unset.
+     *
+     * @return mixed
+     */
+    protected function get_option_value( $key, $default ) {
+        $options = get_option( 'ecosplay_referrals_options', array() );
+
+        if ( ! is_array( $options ) ) {
+            return $default;
+        }
+
+        return array_key_exists( $key, $options ) ? $options[ $key ] : $default;
+    }
+
+    /**
+     * Filters the discount amount using saved settings.
+     *
+     * @param float $value Default discount amount.
+     *
+     * @return float
+     */
+    public function filter_discount_amount( $value ) {
+        return (float) $this->get_option_value( 'discount_amount', $value );
+    }
+
+    /**
+     * Filters the reward amount using saved settings.
+     *
+     * @param float $value Default reward amount.
+     *
+     * @return float
+     */
+    public function filter_reward_amount( $value ) {
+        return (float) $this->get_option_value( 'reward_amount', $value );
+    }
+
+    /**
+     * Filters the balance alert threshold using saved settings.
+     *
+     * @param float $value Default alert threshold.
+     *
+     * @return float
+     */
+    public function filter_balance_threshold( $value ) {
+        return (float) $this->get_option_value( 'balance_alert_threshold', $value );
+    }
+
+    /**
+     * Filters the allowed levels list using saved settings.
+     *
+     * @param array<int|string> $values Default allowed level list.
+     *
+     * @return array<int|string>
+     */
+    public function filter_allowed_levels( $values ) {
+        return (array) $this->get_option_value( 'allowed_levels', $values );
+    }
+
+    /**
+     * Filters the notice message using saved settings.
+     *
+     * @param string $value Default notice message.
+     *
+     * @return string
+     */
+    public function filter_notice_message( $value ) {
+        return (string) $this->get_option_value( 'notice_message', $value );
     }
 
     /**

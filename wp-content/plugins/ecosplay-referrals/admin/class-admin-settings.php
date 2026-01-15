@@ -66,11 +66,6 @@ class Ecosplay_Referrals_Admin_Settings {
 
         add_action( 'admin_init', array( $this, 'register_settings' ) );
         add_action( 'wp_ajax_' . self::STRIPE_DIAGNOSTIC_ACTION, array( $this, 'handle_stripe_diagnostic' ) );
-        add_filter( 'ecosplay_referrals_discount_amount', array( $this, 'filter_discount' ) );
-        add_filter( 'ecosplay_referrals_reward_amount', array( $this, 'filter_reward' ) );
-        add_filter( 'ecosplay_referrals_allowed_levels', array( $this, 'filter_allowed_levels' ) );
-        add_filter( 'ecosplay_referrals_notice_message', array( $this, 'filter_notice_message' ) );
-        add_filter( 'ecosplay_referrals_balance_alert_threshold', array( $this, 'filter_balance_threshold' ) );
     }
 
     /**
@@ -507,91 +502,6 @@ class Ecosplay_Referrals_Admin_Settings {
             esc_textarea( $message ),
             esc_html__( 'Texte présenté dans la notification flottante.', 'ecosplay-referrals' )
         );
-    }
-
-    /**
-     * Adjusts the discount amount exposed to the front end.
-     *
-     * @param float $value Default discount.
-     *
-     * @return float
-     */
-    public function filter_discount( $value ) {
-        $options = $this->get_options();
-
-        if ( isset( $options['discount_amount'] ) ) {
-            return (float) $options['discount_amount'];
-        }
-
-        return (float) $value;
-    }
-
-    /**
-     * Adjusts the reward amount exposed to the front end.
-     *
-     * @param float $value Default reward.
-     *
-     * @return float
-     */
-    public function filter_reward( $value ) {
-        $options = $this->get_options();
-
-        if ( isset( $options['reward_amount'] ) ) {
-            return (float) $options['reward_amount'];
-        }
-
-        return (float) $value;
-    }
-
-    /**
-     * Adjusts the balance threshold exposed to the service layer.
-     *
-     * @param float $value Default value.
-     *
-     * @return float
-     */
-    public function filter_balance_threshold( $value ) {
-        $options = $this->get_options();
-
-        if ( isset( $options['balance_alert_threshold'] ) ) {
-            return (float) $options['balance_alert_threshold'];
-        }
-
-        return (float) $value;
-    }
-
-    /**
-     * Adjusts the allowed membership level list exposed to the service.
-     *
-     * @param array<int|string> $values Default allow list.
-     *
-     * @return array<int|string>
-     */
-    public function filter_allowed_levels( $values ) {
-        $options = $this->get_options();
-
-        if ( isset( $options['allowed_levels'] ) ) {
-            return (array) $options['allowed_levels'];
-        }
-
-        return (array) $values;
-    }
-
-    /**
-     * Adjusts the floating notice message exposed to the UI.
-     *
-     * @param string $value Default message.
-     *
-     * @return string
-     */
-    public function filter_notice_message( $value ) {
-        $options = $this->get_options();
-
-        if ( isset( $options['notice_message'] ) ) {
-            return (string) $options['notice_message'];
-        }
-
-        return (string) $value;
     }
 
     /**
