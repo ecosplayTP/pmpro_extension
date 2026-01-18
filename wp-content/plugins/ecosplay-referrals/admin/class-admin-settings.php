@@ -500,7 +500,7 @@ class Ecosplay_Referrals_Admin_Settings {
             '<p class="description">%3$s</p>',
             esc_attr( $this->option_name ),
             esc_textarea( $message ),
-            esc_html__( 'Texte présenté dans la notification flottante.', 'ecosplay-referrals' )
+            esc_html__( 'Texte présenté dans la notification flottante. Vous pouvez inclure des liens HTML.', 'ecosplay-referrals' )
         );
     }
 
@@ -620,13 +620,27 @@ class Ecosplay_Referrals_Admin_Settings {
      * @return string
      */
     protected function sanitize_notice_message( $value ) {
-        $message = sanitize_textarea_field( (string) $value );
+        $message = trim( (string) $value );
 
         if ( '' === trim( $message ) ) {
             return '';
         }
 
-        return $message;
+        $message = make_clickable( $message );
+
+        return wp_kses(
+            $message,
+            array(
+                'a'      => array(
+                    'href'   => true,
+                    'target' => true,
+                    'rel'    => true,
+                ),
+                'br'     => array(),
+                'strong' => array(),
+                'em'     => array(),
+            )
+        );
     }
 
     /**

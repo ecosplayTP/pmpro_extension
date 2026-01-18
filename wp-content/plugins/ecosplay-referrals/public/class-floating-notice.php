@@ -99,11 +99,27 @@ class Ecosplay_Referrals_Floating_Notice {
         if ( '' === $message ) {
             return;
         }
+
+        $message = make_clickable( $message );
+        $message = nl2br( $message );
+        $message = wp_kses(
+            $message,
+            array(
+                'a'      => array(
+                    'href'   => true,
+                    'target' => true,
+                    'rel'    => true,
+                ),
+                'br'     => array(),
+                'strong' => array(),
+                'em'     => array(),
+            )
+        );
         ?>
         <div class="ecosplay-floating-notice" role="dialog" aria-live="polite" aria-label="<?php esc_attr_e( 'Notification de parrainage', 'ecosplay-referrals' ); ?>">
             <div class="ecosplay-floating-notice__body">
                 <p class="ecosplay-floating-notice__text">
-                    <?php echo wp_kses_post( nl2br( esc_html( $message ) ) ); ?>
+                    <?php echo $message; ?>
                 </p>
                 <button type="button" class="ecosplay-floating-notice__close" data-ecosplay-close aria-label="<?php esc_attr_e( 'Fermer la notification', 'ecosplay-referrals' ); ?>">
                     &times;
