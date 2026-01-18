@@ -181,6 +181,7 @@ class Ecosplay_Referrals_Admin_Menu {
             array(
                 'ajaxUrl'                   => admin_url( 'admin-ajax.php' ),
                 'confirmRegenerateAll'      => __( 'Êtes-vous sûr de vouloir régénérer tous les codes ? Cette action est irréversible.', 'ecosplay-referrals' ),
+                'confirmGenerateMissing'    => __( 'Générer les codes manquants pour les membres éligibles ?', 'ecosplay-referrals' ),
                 'confirmResetNotifications' => __( 'Confirmez-vous la réinitialisation des notifications ?', 'ecosplay-referrals' ),
                 'stripeDiagnosticAction'    => 'ecosplay_referrals_stripe_test',
                 'stripeDiagnosticNonce'     => wp_create_nonce( 'ecosplay_referrals_stripe_test' ),

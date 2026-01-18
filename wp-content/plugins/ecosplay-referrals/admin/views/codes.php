@@ -14,7 +14,32 @@ if ( ! defined( 'ABSPATH' ) ) {
     <form method="post" class="ecos-referrals-inline-form">
         <?php wp_nonce_field( 'ecosplay_referrals_regenerate_all' ); ?>
         <input type="hidden" name="ecosplay_referrals_action" value="regenerate_all" />
-        <?php submit_button( __( 'Régénérer tous les codes', 'ecosplay-referrals' ), 'secondary', 'submit', false ); ?>
+        <?php
+        submit_button(
+            __( 'Régénérer tous les codes', 'ecosplay-referrals' ),
+            'secondary',
+            'submit',
+            false,
+            array(
+                'title' => __( 'Régénère le code pour tous les membres éligibles, même s’ils en ont déjà un.', 'ecosplay-referrals' ),
+            )
+        );
+        ?>
+    </form>
+    <form method="post" class="ecos-referrals-inline-form">
+        <?php wp_nonce_field( 'ecosplay_referrals_generate_missing' ); ?>
+        <input type="hidden" name="ecosplay_referrals_action" value="generate_missing" />
+        <?php
+        submit_button(
+            __( 'Générer tous les codes manquants', 'ecosplay-referrals' ),
+            'secondary',
+            'submit',
+            false,
+            array(
+                'title' => __( 'Crée un code uniquement pour les membres éligibles qui n’en ont pas encore.', 'ecosplay-referrals' ),
+            )
+        );
+        ?>
     </form>
     <form method="post" class="ecos-referrals-inline-form">
         <?php wp_nonce_field( 'ecosplay_referrals_reset_all' ); ?>
