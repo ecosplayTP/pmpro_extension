@@ -626,8 +626,6 @@ class Ecosplay_Referrals_Admin_Settings {
             return '';
         }
 
-        $message = make_clickable( $message );
-
         return wp_kses(
             $message,
             array(
