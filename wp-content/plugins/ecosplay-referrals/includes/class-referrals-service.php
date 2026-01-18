@@ -1267,6 +1267,51 @@ class Ecosplay_Referrals_Service {
     }
 
     /**
+     * Generates missing referral codes for eligible members.
+     *
+     * @return int
+     */
+    public function generate_missing_codes_for_allowed_users() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            return 0;
+        }
+
+        $user_ids = get_users(
+            array(
+                'fields' => 'ids',
+            )
+        );
+
+        if ( empty( $user_ids ) ) {
+            return 0;
+        }
+
+        $generated = 0;
+
+        foreach ( $user_ids as $user_id ) {
+            $user_id = (int) $user_id;
+
+            if ( $user_id <= 0 || ! $this->is_user_allowed( $user_id ) ) {
+                continue;
+            }
+
+            $existing = $this->store->get_referral_by_user( $user_id );
+
+            if ( $existing && ! empty( $existing->code ) ) {
+                continue;
+            }
+
+            $result = $this->store->regenerate_code( $user_id );
+
+            if ( false !== $result ) {
+                $generated++;
+            }
+        }
+
+        return $generated;
+    }
+
+    /**
      * Checks whether the floating notice was already dismissed by the member.
      *
      * @param int $user_id User identifier.

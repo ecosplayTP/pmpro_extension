@@ -78,6 +78,11 @@ class Ecosplay_Referrals_Admin_Codes_Page {
                 $count = $this->service->force_regenerate_all_codes();
                 $this->add_notice( 'regenerate_all', sprintf( _n( '%d code a été régénéré.', '%d codes ont été régénérés.', $count, 'ecosplay-referrals' ), $count ) );
                 break;
+            case 'generate_missing':
+                check_admin_referer( 'ecosplay_referrals_generate_missing' );
+                $count = $this->service->generate_missing_codes_for_allowed_users();
+                $this->add_notice( 'generate_missing', sprintf( _n( '%d code manquant a été généré.', '%d codes manquants ont été générés.', $count, 'ecosplay-referrals' ), $count ) );
+                break;
             case 'regenerate_single':
                 if ( $user_id ) {
                     check_admin_referer( 'ecosplay_referrals_regenerate_' . $user_id );

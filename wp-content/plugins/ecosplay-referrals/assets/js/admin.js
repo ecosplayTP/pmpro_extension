@@ -91,6 +91,12 @@
                 }
             }
 
+            if ( 'generate_missing' === action && strings.confirmGenerateMissing ) {
+                if ( ! window.confirm( strings.confirmGenerateMissing ) ) {
+                    event.preventDefault();
+                }
+            }
+
             if ( 'reset_notifications' === action && strings.confirmResetNotifications ) {
                 if ( ! window.confirm( strings.confirmResetNotifications ) ) {
                     event.preventDefault();
