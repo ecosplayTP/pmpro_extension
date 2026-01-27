@@ -63,7 +63,15 @@ wp-content/
     └── pmpro-notify/
         ├── pmpro-notify.php                 # Point d'entrée : constantes et bootstrap du plugin.
         ├── includes/
+        │   ├── class-notify-store.php       # Accès aux tables des campagnes et des vues.
         │   └── class-plugin.php             # Classe principale et chargement des dépendances.
-        └── admin/
-            └── class-admin-menu.php         # Sous-menu PMPro et écran d'administration.
+        ├── admin/
+        │   └── class-admin-menu.php         # Sous-menu PMPro et écran d'administration.
+        ├── public/
+        │   └── class-floating-notice.php    # Contrôleur front-end de la notification.
+        └── assets/
+            ├── css/
+            │   └── floating-notice.css      # Styles de la notification flottante.
+            └── js/
+                └── floating-notice.js       # Interactions JS pour la notification.
 ```
