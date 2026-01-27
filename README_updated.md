@@ -60,4 +60,10 @@ wp-content/
                 ├── admin.js                  # Interactions JS pour les écrans d'administration.
                 ├── floating-notice.js        # Script de gestion de la notification flottante.
                 └── referral-code.js          # Copie du code de parrainage depuis le front-end.
+    └── pmpro-notify/
+        ├── pmpro-notify.php                 # Point d'entrée : constantes et bootstrap du plugin.
+        ├── includes/
+        │   └── class-plugin.php             # Classe principale et chargement des dépendances.
+        └── admin/
+            └── class-admin-menu.php         # Sous-menu PMPro et écran d'administration.
 ```
