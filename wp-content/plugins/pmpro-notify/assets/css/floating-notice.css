@@ -1,0 +1,41 @@
+/**
+ * Floating notice styles for PMPro Notify.
+ *
+ * @file wp-content/plugins/pmpro-notify/assets/css/floating-notice.css
+ */
+.pmpro-notify-floating-notice {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 9999;
+    max-width: 360px;
+    background: #1f2937;
+    color: #fff;
+    border-radius: 10px;
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+}
+
+.pmpro-notify-floating-notice__body {
+    display: flex;
+    gap: 12px;
+    padding: 16px 18px;
+    align-items: flex-start;
+}
+
+.pmpro-notify-floating-notice__text {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.pmpro-notify-floating-notice__close {
+    border: none;
+    background: transparent;
+    color: #fff;
+    font-size: 20px;
+    cursor: pointer;
+}
+
+.pmpro-notify-floating-notice.is-hidden {
+    display: none;
+}

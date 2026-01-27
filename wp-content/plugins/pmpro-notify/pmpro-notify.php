@@ -33,9 +33,24 @@ function pmpro_notify_define_constants() {
     define( 'PMPRO_NOTIFY_URL', plugin_dir_url( __FILE__ ) );
     define( 'PMPRO_NOTIFY_INC', PMPRO_NOTIFY_DIR . 'includes/' );
     define( 'PMPRO_NOTIFY_ADMIN', PMPRO_NOTIFY_DIR . 'admin/' );
+    define( 'PMPRO_NOTIFY_PUBLIC', PMPRO_NOTIFY_DIR . 'public/' );
 }
 
 pmpro_notify_define_constants();
+
+/**
+ * Creates the PMPro Notify tables on activation.
+ *
+ * @return void
+ */
+function pmpro_notify_activate() {
+    require_once PMPRO_NOTIFY_INC . 'class-notify-store.php';
+
+    $store = new \Pmpro_Notify\Notify_Store();
+    $store->create_tables();
+}
+
+register_activation_hook( __FILE__, 'pmpro_notify_activate' );
 
 require_once PMPRO_NOTIFY_INC . 'class-plugin.php';
 
