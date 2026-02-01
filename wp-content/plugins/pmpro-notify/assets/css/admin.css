@@ -1,0 +1,42 @@
+/*
+ * Admin styles for PMPro Notify.
+ *
+ * File: wp-content/plugins/pmpro-notify/assets/css/admin.css
+ */
+
+.pmpro-notify-table td,
+.pmpro-notify-table th {
+    vertical-align: top;
+}
+
+.pmpro-notify-form .pmpro-notify-multiselect {
+    min-width: 260px;
+    min-height: 120px;
+}
+
+.pmpro-notify-section-title {
+    margin-top: 32px;
+}
+
+.pmpro-notify-chart {
+    margin: 16px 0 24px;
+    padding: 12px;
+    background: #fff;
+    border: 1px solid #dcdcde;
+    border-radius: 4px;
+    max-width: 700px;
+}
+
+.pmpro-notify-chart svg {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+.pmpro-notify-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 16px;
+}

@@ -66,11 +66,14 @@ wp-content/
         │   ├── class-notify-store.php       # Accès aux tables des campagnes et des vues.
         │   └── class-plugin.php             # Classe principale et chargement des dépendances.
         ├── admin/
-        │   └── class-admin-menu.php         # Sous-menu PMPro et écran d'administration.
+        │   ├── class-admin-menu.php         # Sous-menu PMPro et écran d'administration.
+        │   ├── class-admin-campaigns-page.php # Liste et formulaire de gestion des campagnes.
+        │   └── class-admin-stats-page.php   # Tableau et courbe statistiques des vues.
         ├── public/
         │   └── class-floating-notice.php    # Contrôleur front-end de la notification.
         └── assets/
             ├── css/
+            │   ├── admin.css                # Styles de l'interface d'administration.
             │   └── floating-notice.css      # Styles de la notification flottante.
             └── js/
                 └── floating-notice.js       # Interactions JS pour la notification.
