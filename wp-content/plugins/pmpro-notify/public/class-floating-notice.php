@@ -207,7 +207,14 @@ class Floating_Notice {
             return $this->campaign;
         }
 
-        $this->campaign = $this->store->get_active_campaign();
+        $campaigns = $this->store->get_active_campaigns();
+
+        foreach ( $campaigns as $campaign ) {
+            if ( $this->is_user_allowed( $campaign ) ) {
+                $this->campaign = $campaign;
+                break;
+            }
+        }
 
         return $this->campaign;
     }
