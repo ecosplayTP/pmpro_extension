@@ -107,6 +107,111 @@ class Notify_Store {
     }
 
     /**
+     * Retrieves all campaigns for admin listing.
+     *
+     * @return array
+     */
+    public function get_campaigns() {
+        global $wpdb;
+
+        $campaigns_table = $this->get_campaigns_table();
+
+        return $wpdb->get_results( "SELECT * FROM {$campaigns_table} ORDER BY created_at DESC, id DESC" );
+    }
+
+    /**
+     * Fetches a campaign row by ID.
+     *
+     * @param int $campaign_id Campaign identifier.
+     *
+     * @return object|null
+     */
+    public function get_campaign( $campaign_id ) {
+        global $wpdb;
+
+        $campaigns_table = $this->get_campaigns_table();
+
+        $query = $wpdb->prepare(
+            "SELECT * FROM {$campaigns_table} WHERE id = %d",
+            absint( $campaign_id )
+        );
+
+        return $wpdb->get_row( $query );
+    }
+
+    /**
+     * Inserts or updates a campaign row.
+     *
+     * @param array $data Campaign data.
+     *
+     * @return int|false
+     */
+    public function save_campaign( $data ) {
+        global $wpdb;
+
+        $campaigns_table = $this->get_campaigns_table();
+        $now             = current_time( 'mysql' );
+        $campaign_id     = isset( $data['id'] ) ? absint( $data['id'] ) : 0;
+
+        $payload = array(
+            'title'        => $data['title'],
+            'message'      => $data['message'],
+            'level_target' => $data['level_target'],
+            'start_at'     => $data['start_at'],
+            'end_at'       => $data['end_at'],
+            'is_active'    => $data['is_active'],
+            'updated_at'   => $now,
+        );
+
+        $formats = array( '%s', '%s', '%s', '%s', '%s', '%d', '%s' );
+
+        if ( $campaign_id > 0 ) {
+            $result = $wpdb->update(
+                $campaigns_table,
+                $payload,
+                array( 'id' => $campaign_id ),
+                $formats,
+                array( '%d' )
+            );
+
+            return false === $result ? false : $campaign_id;
+        }
+
+        $payload['created_at'] = $now;
+        $formats[]             = '%s';
+
+        $result = $wpdb->insert( $campaigns_table, $payload, $formats );
+
+        return false === $result ? false : (int) $wpdb->insert_id;
+    }
+
+    /**
+     * Aggregates view counts per day for a given range.
+     *
+     * @param string $start_date Inclusive start date (Y-m-d).
+     * @param string $end_date   Inclusive end date (Y-m-d).
+     *
+     * @return array
+     */
+    public function get_views_by_day( $start_date, $end_date ) {
+        global $wpdb;
+
+        $views_table = $this->get_views_table();
+
+        $query = $wpdb->prepare(
+            "SELECT DATE(seen_at) as view_date, COUNT(*) as total_views
+            FROM {$views_table}
+            WHERE DATE(seen_at) BETWEEN %s AND %s
+            GROUP BY DATE(seen_at)
+            ORDER BY DATE(seen_at) ASC",
+            $start_date,
+            $end_date
+        );
+
+        return $wpdb->get_results( $query, ARRAY_A );
+    }
+
+    /**
      * Inserts a view record for a given campaign and user.
      *
      * @param int         $campaign_id Campaign identifier.

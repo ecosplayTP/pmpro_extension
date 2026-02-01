@@ -74,6 +74,8 @@ class Plugin {
      */
     private function load_dependencies() {
         require_once PMPRO_NOTIFY_ADMIN . 'class-admin-menu.php';
+        require_once PMPRO_NOTIFY_ADMIN . 'class-admin-campaigns-page.php';
+        require_once PMPRO_NOTIFY_ADMIN . 'class-admin-stats-page.php';
         require_once PMPRO_NOTIFY_INC . 'class-notify-store.php';
         require_once PMPRO_NOTIFY_PUBLIC . 'class-floating-notice.php';
     }
@@ -87,7 +89,7 @@ class Plugin {
         $this->store = new Notify_Store();
 
         if ( is_admin() ) {
-            new Admin_Menu();
+            new Admin_Menu( $this->store );
 
             return;
         }
