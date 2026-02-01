@@ -85,10 +85,14 @@ class Floating_Notice {
             'pmpro-notify-floating-notice',
             'pmproNotifyFloatingNotice',
             array(
-                'ajaxUrl'    => admin_url( 'admin-ajax.php' ),
-                'action'     => self::AJAX_ACTION,
-                'nonce'      => wp_create_nonce( self::NONCE_ACTION ),
-                'campaignId' => $this->campaign ? absint( $this->campaign->id ) : 0,
+                'ajaxUrl'      => admin_url( 'admin-ajax.php' ),
+                'action'       => self::AJAX_ACTION,
+                'nonce'        => wp_create_nonce( self::NONCE_ACTION ),
+                'campaignId'   => $this->campaign ? absint( $this->campaign->id ) : 0,
+                'cookieName'   => self::COOKIE_NAME,
+                'cookieTtl'    => self::COOKIE_TTL,
+                'cookiePath'   => COOKIEPATH ? COOKIEPATH : '/',
+                'cookieSecure' => is_ssl(),
             )
         );
     }
