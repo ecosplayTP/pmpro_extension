@@ -33,7 +33,7 @@ class Admin_Stats_Page {
     }
 
     /**
-     * Outputs the statistics table and chart.
+     * Outputs the statistics table and chart for a selected campaign.
      *
      * @return void
      */
@@ -42,16 +42,27 @@ class Admin_Stats_Page {
             wp_die( esc_html__( 'Vous n\'avez pas l\'autorisation d\'accéder à cette page.', 'pmpro-notify' ) );
         }
 
-        $range = $this->get_date_range();
-        $data  = $this->get_views_dataset( $range['start'], $range['end'] );
+        $campaigns = $this->store->get_campaigns();
+        $selected  = $this->get_selected_campaign_id( $campaigns );
+        $data      = $this->get_views_dataset( $selected );
 
         echo '<h2>' . esc_html__( 'Statistiques des vues', 'pmpro-notify' ) . '</h2>';
+        if ( empty( $campaigns ) ) {
+            echo '<p>' . esc_html__( 'Aucune campagne disponible pour les statistiques.', 'pmpro-notify' ) . '</p>';
+
+            return;
+        }
+
         echo '<form method="get" class="pmpro-notify-filter">';
         echo '<input type="hidden" name="page" value="pmpro-notify" />';
         echo '<input type="hidden" name="tab" value="stats" />';
-        wp_nonce_field( 'pmpro_notify_stats_range', 'pmpro_notify_stats_nonce' );
-        echo '<label>' . esc_html__( 'Début', 'pmpro-notify' ) . ' <input type="date" name="start" value="' . esc_attr( $range['start'] ) . '"></label>';
-        echo '<label>' . esc_html__( 'Fin', 'pmpro-notify' ) . ' <input type="date" name="end" value="' . esc_attr( $range['end'] ) . '"></label>';
+        wp_nonce_field( 'pmpro_notify_stats_campaign', 'pmpro_notify_stats_nonce' );
+        echo '<label for="pmpro-notify-campaign">' . esc_html__( 'Campagne', 'pmpro-notify' ) . '</label>';
+        echo '<select id="pmpro-notify-campaign" name="campaign_id">';
+        foreach ( $campaigns as $campaign ) {
+            echo '<option value="' . esc_attr( $campaign->id ) . '"' . selected( $selected, (int) $campaign->id, false ) . '>' . esc_html( $campaign->title ) . '</option>';
+        }
+        echo '</select>';
         submit_button( __( 'Filtrer', 'pmpro-notify' ), 'secondary', '', false );
         echo '</form>';
 
@@ -67,46 +78,55 @@ class Admin_Stats_Page {
     }
 
     /**
-     * Retrieves the filtered date range for the report.
+     * Retrieves the campaign identifier requested in the filter.
      *
-     * @return array
+     * @param array $campaigns List of campaign rows.
+     *
+     * @return int
      */
-    private function get_date_range() {
-        $default_end   = current_time( 'Y-m-d' );
-        $default_start = gmdate( 'Y-m-d', strtotime( $default_end . ' -13 days' ) );
-
-        $start = isset( $_GET['start'] ) ? sanitize_text_field( wp_unslash( $_GET['start'] ) ) : $default_start;
-        $end   = isset( $_GET['end'] ) ? sanitize_text_field( wp_unslash( $_GET['end'] ) ) : $default_end;
-
-        if ( empty( $_GET['start'] ) && empty( $_GET['end'] ) ) {
-            return array( 'start' => $default_start, 'end' => $default_end );
+    private function get_selected_campaign_id( $campaigns ) {
+        if ( empty( $campaigns ) ) {
+            return 0;
         }
 
-        if ( empty( $_GET['pmpro_notify_stats_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_GET['pmpro_notify_stats_nonce'] ) ), 'pmpro_notify_stats_range' ) ) {
-            return array( 'start' => $default_start, 'end' => $default_end );
+        $default_id = (int) $campaigns[0]->id;
+
+        if ( empty( $_GET['campaign_id'] ) ) {
+            return $default_id;
         }
 
-        if ( ! $this->is_valid_date( $start ) || ! $this->is_valid_date( $end ) ) {
-            return array( 'start' => $default_start, 'end' => $default_end );
+        if ( empty( $_GET['pmpro_notify_stats_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_GET['pmpro_notify_stats_nonce'] ) ), 'pmpro_notify_stats_campaign' ) ) {
+            return $default_id;
         }
 
-        if ( $start > $end ) {
-            return array( 'start' => $default_start, 'end' => $default_end );
+        $requested_id = absint( $_GET['campaign_id'] );
+        $allowed_ids  = array_map(
+            static function( $campaign ) {
+                return (int) $campaign->id;
+            },
+            $campaigns
+        );
+
+        if ( ! in_array( $requested_id, $allowed_ids, true ) ) {
+            return $default_id;
         }
 
-        return array( 'start' => $start, 'end' => $end );
+        return $requested_id;
     }
 
     /**
-     * Builds a normalized dataset of views per day.
+     * Builds a normalized dataset of views per day for a campaign.
      *
-     * @param string $start Start date.
-     * @param string $end   End date.
+     * @param int $campaign_id Campaign identifier.
      *
      * @return array
      */
-    private function get_views_dataset( $start, $end ) {
-        $raw_rows = $this->store->get_views_by_day( $start, $end );
+    private function get_views_dataset( $campaign_id ) {
+        if ( empty( $campaign_id ) ) {
+            return array();
+        }
+
+        $raw_rows = $this->store->get_views_by_campaign( $campaign_id );
         $indexed  = array();
 
         foreach ( $raw_rows as $row ) {
@@ -114,13 +134,11 @@ class Admin_Stats_Page {
         }
 
         $data = array();
-        $date = $start;
-        while ( $date <= $end ) {
+        foreach ( $indexed as $date => $count ) {
             $data[] = array(
                 'date'  => $date,
-                'count' => isset( $indexed[ $date ] ) ? $indexed[ $date ] : 0,
+                'count' => $count,
             );
-            $date = gmdate( 'Y-m-d', strtotime( $date . ' +1 day' ) );
         }
 
         return $data;
@@ -161,16 +179,4 @@ class Admin_Stats_Page {
         );
     }
 
-    /**
-     * Validates a Y-m-d date.
-     *
-     * @param string $date Date string.
-     *
-     * @return bool
-     */
-    private function is_valid_date( $date ) {
-        $parsed = date_create_from_format( 'Y-m-d', $date );
-
-        return $parsed && $parsed->format( 'Y-m-d' ) === $date;
-    }
 }
