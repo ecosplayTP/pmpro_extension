@@ -184,7 +184,13 @@ class Notify_Store {
                 array( '%d' )
             );
 
-            return false === $result ? false : $campaign_id;
+            if ( false === $result ) {
+                return false;
+            }
+
+            $this->invalidate_active_campaign_cache();
+
+            return $campaign_id;
         }
 
         $payload['created_at'] = $now;
@@ -192,7 +198,24 @@ class Notify_Store {
 
         $result = $wpdb->insert( $campaigns_table, $payload, $formats );
 
-        return false === $result ? false : (int) $wpdb->insert_id;
+        if ( false === $result ) {
+            return false;
+        }
+
+        $this->invalidate_active_campaign_cache();
+
+        return (int) $wpdb->insert_id;
+    }
+
+    /**
+     * Invalidates cached active campaign data.
+     *
+     * @return void
+     */
+    private function invalidate_active_campaign_cache() {
+        $version = (int) get_option( 'pmpro_notify_active_campaign_version', 1 );
+
+        update_option( 'pmpro_notify_active_campaign_version', $version + 1 );
     }
 
     /**

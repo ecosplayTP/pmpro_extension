@@ -20,6 +20,7 @@ class Floating_Notice {
     const AJAX_ACTION  = 'pmpro_notify_notice_dismiss';
     const NONCE_ACTION = 'pmpro_notify_notice';
     const COOKIE_TTL   = WEEK_IN_SECONDS;
+    const CACHE_TTL    = 600;
 
     /**
      * Data store for campaigns and views.
@@ -207,6 +208,15 @@ class Floating_Notice {
             return $this->campaign;
         }
 
+        $cache_key = $this->get_active_campaign_cache_key();
+        $cached    = get_transient( $cache_key );
+
+        if ( false !== $cached ) {
+            $this->campaign = $cached ? $cached : null;
+
+            return $this->campaign;
+        }
+
         $campaigns = $this->store->get_active_campaigns();
 
         foreach ( $campaigns as $campaign ) {
@@ -216,7 +226,47 @@ class Floating_Notice {
             }
         }
 
+        set_transient( $cache_key, $this->campaign ? $this->campaign : 0, self::CACHE_TTL );
+
         return $this->campaign;
+    }
+
+    /**
+     * Builds a cache key for the active campaign and user segment.
+     *
+     * @return string
+     */
+    private function get_active_campaign_cache_key() {
+        $version = (int) get_option( 'pmpro_notify_active_campaign_version', 1 );
+        $segment = $this->get_active_campaign_cache_segment();
+
+        return sprintf( 'pmpro_notify_active_campaign_%s_v%d', $segment, $version );
+    }
+
+    /**
+     * Defines a cache segment based on the visitor membership state.
+     *
+     * @return string
+     */
+    private function get_active_campaign_cache_segment() {
+        $user_id = get_current_user_id();
+
+        if ( $user_id <= 0 ) {
+            return 'guest';
+        }
+
+        if ( function_exists( 'pmpro_getMembershipLevelsForUser' ) ) {
+            $levels = pmpro_getMembershipLevelsForUser( $user_id );
+            $ids    = is_array( $levels ) ? wp_list_pluck( $levels, 'id' ) : array();
+
+            if ( $ids ) {
+                sort( $ids );
+
+                return md5( wp_json_encode( array_map( 'absint', $ids ) ) );
+            }
+        }
+
+        return 'member';
     }
 
     /**
