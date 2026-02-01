@@ -24,6 +24,9 @@
 
 .pmpro-notify-floating-notice__text {
     margin: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-right: 8px;
     font-size: 14px;
     line-height: 1.4;
 }
@@ -34,8 +37,16 @@
     color: #fff;
     font-size: 20px;
     cursor: pointer;
+    align-self: flex-start;
+    flex-shrink: 0;
 }
 
 .pmpro-notify-floating-notice.is-hidden {
     display: none;
+}
+
+@media (max-width: 480px) {
+    .pmpro-notify-floating-notice__text {
+        padding-right: 24px;
+    }
 }
