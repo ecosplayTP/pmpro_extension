@@ -87,6 +87,17 @@ class Notify_Store {
      * @return object|null
      */
     public function get_active_campaign() {
+        $campaigns = $this->get_active_campaigns();
+
+        return $campaigns ? $campaigns[0] : null;
+    }
+
+    /**
+     * Retrieves all active campaigns for the current date.
+     *
+     * @return array
+     */
+    public function get_active_campaigns() {
         global $wpdb;
 
         $campaigns_table = $this->get_campaigns_table();
@@ -97,13 +108,12 @@ class Notify_Store {
             WHERE is_active = 1
                 AND (start_at IS NULL OR start_at <= %s)
                 AND (end_at IS NULL OR end_at >= %s)
-            ORDER BY start_at DESC, id DESC
-            LIMIT 1",
+            ORDER BY start_at DESC, id DESC",
             $now,
             $now
         );
 
-        return $wpdb->get_row( $query );
+        return $wpdb->get_results( $query );
     }
 
     /**
