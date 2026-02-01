@@ -219,14 +219,13 @@ class Notify_Store {
     }
 
     /**
-     * Aggregates view counts per day for a given range.
+     * Aggregates view counts per day for a specific campaign.
      *
-     * @param string $start_date Inclusive start date (Y-m-d).
-     * @param string $end_date   Inclusive end date (Y-m-d).
+     * @param int $campaign_id Campaign identifier.
      *
      * @return array
      */
-    public function get_views_by_day( $start_date, $end_date ) {
+    public function get_views_by_campaign( $campaign_id ) {
         global $wpdb;
 
         $views_table = $this->get_views_table();
@@ -234,11 +233,10 @@ class Notify_Store {
         $query = $wpdb->prepare(
             "SELECT DATE(seen_at) as view_date, COUNT(*) as total_views
             FROM {$views_table}
-            WHERE DATE(seen_at) BETWEEN %s AND %s
+            WHERE campaign_id = %d
             GROUP BY DATE(seen_at)
             ORDER BY DATE(seen_at) ASC",
-            $start_date,
-            $end_date
+            absint( $campaign_id )
         );
 
         return $wpdb->get_results( $query, ARRAY_A );
