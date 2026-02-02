@@ -81,7 +81,7 @@ class Floating_Notice {
             'pmpro-notify-floating-notice',
             PMPRO_NOTIFY_URL . 'assets/js/floating-notice.js',
             array(),
-            PMPRO_NOTIFY_VERSION,
+            $this->get_asset_version( 'assets/js/floating-notice.js' ),
             true
         );
 
@@ -145,6 +145,27 @@ class Floating_Notice {
             </div>
         </div>
         <?php
+    }
+
+    /**
+     * Returns a cache-busting version for an asset file.
+     *
+     * @param string $relative_path Asset path relative to the plugin root.
+     *
+     * @return string Version string for asset enqueueing.
+     */
+    private function get_asset_version( $relative_path ) {
+        $path = PMPRO_NOTIFY_DIR . ltrim( $relative_path, '/' );
+
+        if ( file_exists( $path ) ) {
+            $mtime = filemtime( $path );
+
+            if ( false !== $mtime ) {
+                return (string) $mtime;
+            }
+        }
+
+        return PMPRO_NOTIFY_VERSION;
     }
 
     /**
