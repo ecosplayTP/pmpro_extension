@@ -59,7 +59,16 @@
 
         var settings = window.pmproNotifyFloatingNotice;
         setNoticeCookie(settings);
+        sendDismissRequest(settings, false);
+    }
 
+    /**
+     * Sends the dismiss request and retries on nonce failure.
+     *
+     * @param {Object} settings Notice settings from localization.
+     * @param {boolean} hasRetried Whether a retry already occurred.
+     */
+    function sendDismissRequest(settings, hasRetried) {
         var data = new FormData();
         data.append('action', settings.action);
         data.append('nonce', settings.nonce);
@@ -69,7 +78,74 @@
             method: 'POST',
             credentials: 'same-origin',
             body: data
-        });
+        })
+            .then(function (response) {
+                return response.json().catch(function () {
+                    return null;
+                });
+            })
+            .then(function (payload) {
+                if (!payload) {
+                    return;
+                }
+
+                if (payload.success) {
+                    setNoticeCookie(settings);
+                    return;
+                }
+
+                if (
+                    !hasRetried &&
+                    payload.data &&
+                    payload.data.code === 'invalid_nonce'
+                ) {
+                    refreshNonce(settings).then(function (nonce) {
+                        if (!nonce) {
+                            return;
+                        }
+                        settings.nonce = nonce;
+                        sendDismissRequest(settings, true);
+                    });
+                }
+            });
+    }
+
+    /**
+     * Requests a fresh nonce from the server.
+     *
+     * @param {Object} settings Notice settings from localization.
+     * @return {Promise} Promise resolving with the new nonce or null.
+     */
+    function refreshNonce(settings) {
+        if (!settings.refreshNonce) {
+            return Promise.resolve(null);
+        }
+
+        var data = new FormData();
+        data.append('action', settings.refreshNonce);
+
+        return fetch(settings.ajaxUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            body: data
+        })
+            .then(function (response) {
+                return response.json().catch(function () {
+                    return null;
+                });
+            })
+            .then(function (payload) {
+                if (
+                    payload &&
+                    payload.success &&
+                    payload.data &&
+                    payload.data.nonce
+                ) {
+                    return payload.data.nonce;
+                }
+
+                return null;
+            });
     }
 
     document.addEventListener('click', dismissNotice);
