@@ -174,21 +174,70 @@ class Floating_Notice {
      * @return void
      */
     public function handle_notice_seen() {
-        if ( ! is_user_logged_in() ) {
+        $user_id     = get_current_user_id();
+        $campaign_id = isset( $_POST['campaign_id'] ) ? absint( $_POST['campaign_id'] ) : 0;
+        $nonce       = isset( $_POST['nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['nonce'] ) ) : '';
+
+        if ( $user_id <= 0 ) {
+            $this->log_notice_debug( 'Dismiss request rejected: user not logged in.', array( 'campaign_id' => $campaign_id ) );
             wp_send_json_error();
         }
 
-        check_ajax_referer( 'pmpro_notify_notice_seen', 'nonce' );
+        if ( ! wp_verify_nonce( $nonce, 'pmpro_notify_notice_seen' ) ) {
+            $this->log_notice_debug(
+                'Dismiss request rejected: invalid nonce.',
+                array(
+                    'campaign_id' => $campaign_id,
+                    'user_id'     => $user_id,
+                    'nonce'       => $nonce ? 'provided' : 'missing',
+                )
+            );
+            wp_send_json_error();
+        }
 
-        $campaign_id = isset( $_POST['campaign_id'] ) ? absint( $_POST['campaign_id'] ) : 0;
-        $user_id     = get_current_user_id();
-
-        if ( $campaign_id <= 0 || $user_id <= 0 ) {
+        if ( $campaign_id <= 0 ) {
+            $this->log_notice_debug(
+                'Dismiss request rejected: invalid campaign id.',
+                array(
+                    'campaign_id' => $campaign_id,
+                    'user_id'     => $user_id,
+                )
+            );
             wp_send_json_error();
         }
 
         $this->record_view( $campaign_id, $user_id );
+        $this->log_notice_debug(
+            'Dismiss request accepted.',
+            array(
+                'campaign_id' => $campaign_id,
+                'user_id'     => $user_id,
+            )
+        );
         wp_send_json_success();
+    }
+
+    /**
+     * Logs debug information to debug.log when enabled.
+     *
+     * @param string $message Log message.
+     * @param array  $context Contextual data for the log entry.
+     *
+     * @return void
+     */
+    private function log_notice_debug( $message, array $context = array() ) {
+        if ( ! defined( 'WP_DEBUG_LOG' ) || ! WP_DEBUG_LOG ) {
+            return;
+        }
+
+        $payload = $context ? wp_json_encode( $context ) : '';
+        $line    = '[pmpro-notify] ' . $message;
+
+        if ( $payload ) {
+            $line .= ' ' . $payload;
+        }
+
+        error_log( $line );
     }
 
     /**
