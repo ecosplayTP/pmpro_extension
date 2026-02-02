@@ -13,14 +13,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Displays campaign notifications and records dismissals.
+ * Displays campaign notifications.
  */
 class Floating_Notice {
-    const COOKIE_NAME  = 'pmpro_notify_notice_seen';
-    const AJAX_ACTION  = 'pmpro_notify_notice_dismiss';
-    const AJAX_REFRESH = 'pmpro_notify_refresh_nonce';
-    const NONCE_ACTION = 'pmpro_notify_notice';
-    const COOKIE_TTL   = WEEK_IN_SECONDS;
     const CACHE_TTL    = 600;
 
     /**
@@ -54,10 +49,6 @@ class Floating_Notice {
 
         add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
         add_action( 'wp_footer', array( $this, 'render_notice' ) );
-        add_action( 'wp_ajax_' . self::AJAX_ACTION, array( $this, 'handle_dismiss' ) );
-        add_action( 'wp_ajax_nopriv_' . self::AJAX_ACTION, array( $this, 'handle_dismiss' ) );
-        add_action( 'wp_ajax_' . self::AJAX_REFRESH, array( $this, 'refresh_nonce' ) );
-        add_action( 'wp_ajax_nopriv_' . self::AJAX_REFRESH, array( $this, 'refresh_nonce' ) );
     }
 
     /**
@@ -85,21 +76,6 @@ class Floating_Notice {
             true
         );
 
-        wp_localize_script(
-            'pmpro-notify-floating-notice',
-            'pmproNotifyFloatingNotice',
-            array(
-                'ajaxUrl'      => admin_url( 'admin-ajax.php' ),
-                'action'       => self::AJAX_ACTION,
-                'refreshNonce' => self::AJAX_REFRESH,
-                'nonce'        => wp_create_nonce( self::NONCE_ACTION ),
-                'campaignId'   => $this->campaign ? absint( $this->campaign->id ) : 0,
-                'cookieName'   => self::COOKIE_NAME,
-                'cookieTtl'    => self::COOKIE_TTL,
-                'cookiePath'   => COOKIEPATH ? COOKIEPATH : '/',
-                'cookieSecure' => is_ssl(),
-            )
-        );
     }
 
     /**
@@ -169,71 +145,17 @@ class Floating_Notice {
     }
 
     /**
-     * Handles the dismiss action and records the view.
+     * Records a notice view in the data store.
+     *
+     * @file wp-content/plugins/pmpro-notify/public/class-floating-notice.php
+     *
+     * @param int $campaign_id Campaign identifier.
+     * @param int $user_id User identifier.
      *
      * @return void
      */
-    public function handle_dismiss() {
-        $nonce       = isset( $_POST['nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['nonce'] ) ) : '';
-        $campaign_id = isset( $_POST['campaign_id'] ) ? absint( $_POST['campaign_id'] ) : 0;
-        $user_id     = get_current_user_id();
-
-        if ( ! $this->is_valid_referer() ) {
-            wp_send_json_error(
-                array(
-                    'code'    => 'invalid_referer',
-                    'message' => __( 'Invalid request source.', 'pmpro-notify' ),
-                )
-            );
-        }
-
-        if ( $campaign_id <= 0 ) {
-            wp_send_json_error(
-                array(
-                    'code'    => 'invalid_campaign',
-                    'message' => __( 'Invalid campaign.', 'pmpro-notify' ),
-                )
-            );
-        }
-
-        if ( ! wp_verify_nonce( $nonce, self::NONCE_ACTION ) ) {
-            wp_send_json_error(
-                array(
-                    'code'    => 'invalid_nonce',
-                    'message' => __( 'Invalid nonce.', 'pmpro-notify' ),
-                )
-            );
-        }
-
-        if ( $campaign_id > 0 && $user_id > 0 ) {
-            $this->store->insert_view( $campaign_id, $user_id );
-        }
-
-        $this->set_notice_cookie( $campaign_id );
-
-        wp_send_json_success( array( 'status' => 'dismissed' ) );
-    }
-
-    /**
-     * Provides a fresh nonce for dismissal requests.
-     *
-     * @return void
-     */
-    public function refresh_nonce() {
-        if ( ! $this->is_valid_referer() ) {
-            wp_send_json_error(
-                array(
-                    'code'    => 'invalid_referer',
-                    'message' => __( 'Invalid request source.', 'pmpro-notify' ),
-                )
-            );
-        }
-
-        wp_send_json_success(
-            array(
-                'nonce' => wp_create_nonce( self::NONCE_ACTION ),
-            )
-        );
+    public function record_view( $campaign_id, $user_id ) {
+        $this->store->insert_view( $campaign_id, $user_id );
     }
 
     /**
@@ -343,28 +265,6 @@ class Floating_Notice {
     }
 
     /**
-     * Verifies the request referer when available.
-     *
-     * @return bool
-     */
-    private function is_valid_referer() {
-        $referer = wp_get_referer();
-
-        if ( ! $referer ) {
-            return true;
-        }
-
-        $referer_host = wp_parse_url( $referer, PHP_URL_HOST );
-        $home_host    = wp_parse_url( home_url(), PHP_URL_HOST );
-
-        if ( ! $referer_host || ! $home_host ) {
-            return true;
-        }
-
-        return strtolower( $referer_host ) === strtolower( $home_host );
-    }
-
-    /**
      * Checks if the campaign targets the current member level.
      *
      * @param object $campaign Campaign row.
@@ -403,31 +303,6 @@ class Floating_Notice {
             return $this->store->has_seen_campaign( $campaign->id, $user_id );
         }
 
-        if ( empty( $_COOKIE[ self::COOKIE_NAME ] ) ) {
-            return false;
-        }
-
-        return absint( $_COOKIE[ self::COOKIE_NAME ] ) >= absint( $campaign->id );
-    }
-
-    /**
-     * Persists a cookie to avoid repeating the notice for guests.
-     *
-     * @param int $campaign_id Campaign identifier.
-     *
-     * @return void
-     */
-    private function set_notice_cookie( $campaign_id ) {
-        setcookie(
-            self::COOKIE_NAME,
-            (string) absint( $campaign_id ),
-            time() + self::COOKIE_TTL,
-            COOKIEPATH ? COOKIEPATH : '/',
-            COOKIE_DOMAIN,
-            is_ssl(),
-            false
-        );
-
-        $_COOKIE[ self::COOKIE_NAME ] = (string) absint( $campaign_id );
+        return false;
     }
 }
