@@ -49,6 +49,7 @@ class Floating_Notice {
 
         add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
         add_action( 'wp_footer', array( $this, 'render_notice' ) );
+        add_action( 'wp_ajax_pmpro_notify_notice_seen', array( $this, 'handle_notice_seen' ) );
     }
 
     /**
@@ -75,7 +76,16 @@ class Floating_Notice {
             $this->get_asset_version( 'assets/js/floating-notice.js' ),
             true
         );
-
+        wp_localize_script(
+            'pmpro-notify-floating-notice',
+            'pmproNotifyFloatingNotice',
+            array(
+                'ajaxUrl'    => admin_url( 'admin-ajax.php' ),
+                'action'     => 'pmpro_notify_notice_seen',
+                'nonce'      => wp_create_nonce( 'pmpro_notify_notice_seen' ),
+                'campaignId' => $this->campaign ? (int) $this->campaign->id : 0,
+            )
+        );
     }
 
     /**
@@ -156,6 +166,29 @@ class Floating_Notice {
      */
     public function record_view( $campaign_id, $user_id ) {
         $this->store->insert_view( $campaign_id, $user_id );
+    }
+
+    /**
+     * Handles the AJAX request to mark the notice as seen.
+     *
+     * @return void
+     */
+    public function handle_notice_seen() {
+        if ( ! is_user_logged_in() ) {
+            wp_send_json_error();
+        }
+
+        check_ajax_referer( 'pmpro_notify_notice_seen', 'nonce' );
+
+        $campaign_id = isset( $_POST['campaign_id'] ) ? absint( $_POST['campaign_id'] ) : 0;
+        $user_id     = get_current_user_id();
+
+        if ( $campaign_id <= 0 || $user_id <= 0 ) {
+            wp_send_json_error();
+        }
+
+        $this->record_view( $campaign_id, $user_id );
+        wp_send_json_success();
     }
 
     /**
