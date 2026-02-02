@@ -50,6 +50,7 @@ class Floating_Notice {
         add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
         add_action( 'wp_footer', array( $this, 'render_notice' ) );
         add_action( 'wp_ajax_pmpro_notify_notice_seen', array( $this, 'handle_notice_seen' ) );
+        add_action( 'wp_ajax_nopriv_pmpro_notify_notice_seen', array( $this, 'handle_notice_seen' ) );
     }
 
     /**
@@ -178,11 +179,6 @@ class Floating_Notice {
         $campaign_id = isset( $_POST['campaign_id'] ) ? absint( $_POST['campaign_id'] ) : 0;
         $nonce       = isset( $_POST['nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['nonce'] ) ) : '';
 
-        if ( $user_id <= 0 ) {
-            $this->log_notice_debug( 'Dismiss request rejected: user not logged in.', array( 'campaign_id' => $campaign_id ) );
-            wp_send_json_error();
-        }
-
         if ( ! wp_verify_nonce( $nonce, 'pmpro_notify_notice_seen' ) ) {
             $this->log_notice_debug(
                 'Dismiss request rejected: invalid nonce.',
@@ -204,6 +200,14 @@ class Floating_Notice {
                 )
             );
             wp_send_json_error();
+        }
+
+        if ( $user_id <= 0 ) {
+            $this->log_notice_debug(
+                'Dismiss request accepted for guest; no user id available.',
+                array( 'campaign_id' => $campaign_id )
+            );
+            wp_send_json_success();
         }
 
         $this->record_view( $campaign_id, $user_id );
