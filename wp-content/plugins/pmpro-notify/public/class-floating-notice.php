@@ -18,6 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Floating_Notice {
     const COOKIE_NAME  = 'pmpro_notify_notice_seen';
     const AJAX_ACTION  = 'pmpro_notify_notice_dismiss';
+    const AJAX_REFRESH = 'pmpro_notify_refresh_nonce';
     const NONCE_ACTION = 'pmpro_notify_notice';
     const COOKIE_TTL   = WEEK_IN_SECONDS;
     const CACHE_TTL    = 600;
@@ -55,6 +56,8 @@ class Floating_Notice {
         add_action( 'wp_footer', array( $this, 'render_notice' ) );
         add_action( 'wp_ajax_' . self::AJAX_ACTION, array( $this, 'handle_dismiss' ) );
         add_action( 'wp_ajax_nopriv_' . self::AJAX_ACTION, array( $this, 'handle_dismiss' ) );
+        add_action( 'wp_ajax_' . self::AJAX_REFRESH, array( $this, 'refresh_nonce' ) );
+        add_action( 'wp_ajax_nopriv_' . self::AJAX_REFRESH, array( $this, 'refresh_nonce' ) );
     }
 
     /**
@@ -88,6 +91,7 @@ class Floating_Notice {
             array(
                 'ajaxUrl'      => admin_url( 'admin-ajax.php' ),
                 'action'       => self::AJAX_ACTION,
+                'refreshNonce' => self::AJAX_REFRESH,
                 'nonce'        => wp_create_nonce( self::NONCE_ACTION ),
                 'campaignId'   => $this->campaign ? absint( $this->campaign->id ) : 0,
                 'cookieName'   => self::COOKIE_NAME,
@@ -149,10 +153,36 @@ class Floating_Notice {
      * @return void
      */
     public function handle_dismiss() {
-        check_ajax_referer( self::NONCE_ACTION, 'nonce' );
-
+        $nonce       = isset( $_POST['nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['nonce'] ) ) : '';
         $campaign_id = isset( $_POST['campaign_id'] ) ? absint( $_POST['campaign_id'] ) : 0;
         $user_id     = get_current_user_id();
+
+        if ( ! $this->is_valid_referer() ) {
+            wp_send_json_error(
+                array(
+                    'code'    => 'invalid_referer',
+                    'message' => __( 'Invalid request source.', 'pmpro-notify' ),
+                )
+            );
+        }
+
+        if ( $campaign_id <= 0 ) {
+            wp_send_json_error(
+                array(
+                    'code'    => 'invalid_campaign',
+                    'message' => __( 'Invalid campaign.', 'pmpro-notify' ),
+                )
+            );
+        }
+
+        if ( ! wp_verify_nonce( $nonce, self::NONCE_ACTION ) ) {
+            wp_send_json_error(
+                array(
+                    'code'    => 'invalid_nonce',
+                    'message' => __( 'Invalid nonce.', 'pmpro-notify' ),
+                )
+            );
+        }
 
         if ( $campaign_id > 0 && $user_id > 0 ) {
             $this->store->insert_view( $campaign_id, $user_id );
@@ -161,6 +191,28 @@ class Floating_Notice {
         $this->set_notice_cookie( $campaign_id );
 
         wp_send_json_success( array( 'status' => 'dismissed' ) );
+    }
+
+    /**
+     * Provides a fresh nonce for dismissal requests.
+     *
+     * @return void
+     */
+    public function refresh_nonce() {
+        if ( ! $this->is_valid_referer() ) {
+            wp_send_json_error(
+                array(
+                    'code'    => 'invalid_referer',
+                    'message' => __( 'Invalid request source.', 'pmpro-notify' ),
+                )
+            );
+        }
+
+        wp_send_json_success(
+            array(
+                'nonce' => wp_create_nonce( self::NONCE_ACTION ),
+            )
+        );
     }
 
     /**
@@ -267,6 +319,28 @@ class Floating_Notice {
         }
 
         return 'member';
+    }
+
+    /**
+     * Verifies the request referer when available.
+     *
+     * @return bool
+     */
+    private function is_valid_referer() {
+        $referer = wp_get_referer();
+
+        if ( ! $referer ) {
+            return true;
+        }
+
+        $referer_host = wp_parse_url( $referer, PHP_URL_HOST );
+        $home_host    = wp_parse_url( home_url(), PHP_URL_HOST );
+
+        if ( ! $referer_host || ! $home_host ) {
+            return true;
+        }
+
+        return strtolower( $referer_host ) === strtolower( $home_host );
     }
 
     /**
