@@ -69,10 +69,10 @@
      * @param {boolean} hasRetried Whether a retry already occurred.
      */
     function sendDismissRequest(settings, hasRetried) {
-        var data = new FormData();
-        data.append('action', settings.action);
-        data.append('nonce', settings.nonce);
-        data.append('campaign_id', settings.campaignId || 0);
+        var data = new URLSearchParams();
+        data.set('action', settings.action);
+        data.set('nonce', settings.nonce);
+        data.set('campaign_id', settings.campaignId || 0);
 
         fetch(settings.ajaxUrl, {
             method: 'POST',
@@ -121,8 +121,8 @@
             return Promise.resolve(null);
         }
 
-        var data = new FormData();
-        data.append('action', settings.refreshNonce);
+        var data = new URLSearchParams();
+        data.set('action', settings.refreshNonce);
 
         return fetch(settings.ajaxUrl, {
             method: 'POST',
