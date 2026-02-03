@@ -88,7 +88,7 @@ class Plugin {
     private function register_hooks() {
         $this->store = new Notify_Store();
 
-        if ( is_admin() ) {
+        if ( is_admin() && ! wp_doing_ajax() ) {
             new Admin_Menu( $this->store );
 
             return;
